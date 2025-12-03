@@ -112,13 +112,13 @@ def get_llms():
         raise ValueError("OPENAI_API_KEY is missing.")
     return (
         ChatOpenAI(model="gpt-4-turbo", temperature=0.2),
-        ChatOpenAI(model="gpt-4o", temperature=0.7)
+        ChatOpenAI(model="gpt-5.1", temperature=0.7)
     )
 
 
 def trend_spotter_node(state: AgentState):
     print("[Trend Spotter] User did not provide a topic. Rolling dice for category...")
-    gpt4_turbo, gpt4o = get_llms()
+    gpt4_turbo, gpt5_1 = get_llms()
 
     categories, weights = zip(*CATEGORIES_WEIGHTS)
     target_category = random.choices(categories, weights=weights, k=1)[0]
@@ -143,7 +143,7 @@ def trend_spotter_node(state: AgentState):
     5. Output ONLY the topic title - make it compelling
     """
 
-    response = gpt4o.invoke([
+    response = gpt5_1.invoke([
         SystemMessage(content=system_prompt),
         HumanMessage(content=f"Here is the latest news:\n{search_results}")
     ])
@@ -178,7 +178,7 @@ def researcher_node(state: AgentState):
 
 def writer_node(state: AgentState):
     print("[Writer] Drafting content...")
-    gpt4_turbo, gpt4o = get_llms()
+    gpt4_turbo, gpt5_1 = get_llms()
 
     topic = state["topic"]
     instructions = state["custom_instructions"]
@@ -253,9 +253,12 @@ def writer_node(state: AgentState):
     - NO GitHub links
     - NO Stack Overflow links  
     - Use: Official documentation, reputable tech publications, major tech company blogs (Google AI Blog, AWS Blog, Microsoft DevBlogs)
+    - **CRITICAL**: ONLY use URLs that actually appear in the RESEARCH DATA below
+    - **NEVER fabricate or make up URLs** - this will result in 404 errors
+    - Copy the EXACT URL from the research data
     - Links must be directly relevant and add real value
     - Format: `[Link Text](URL)`
-    - Extract from RESEARCH DATA provided
+    - Double-check each URL is copied exactly from RESEARCH DATA
 
     INTERNAL LINKS (Weave in 2-3 naturally):
     - Mobile Development: https://www.coderdesign.com/mobile-app-development
@@ -295,30 +298,33 @@ def writer_node(state: AgentState):
     1. Write like a human expert, NOT an AI
     2. Start with engaging hook (anecdote, "You know what?", surprising fact)
     3. Use conversational transitions and casual phrases naturally
-    4. Include 2-3 external links ONLY from official docs or major tech blogs
-    5. NO GitHub, NO Stack Overflow links
-    6. Mix sentence lengths dramatically for burstiness
-    7. Add subtle emotional cues and rhetorical questions
-    8. Include real company names, specific numbers, concrete examples
-    9. CRITICAL BULLET RULE - ZERO TOLERANCE: 
+    4. **EXTERNAL LINKS - CRITICAL**: Include 2-3 links BUT **ONLY use URLs that exist in the RESEARCH DATA below**
+    5. **NEVER MAKE UP URLs** - AI models hallucinate fake links. Copy exact URLs from research data.
+    6. NO GitHub, NO Stack Overflow links
+    7. Mix sentence lengths dramatically for burstiness
+    8. Add subtle emotional cues and rhetorical questions
+    9. Include real company names, specific numbers, concrete examples
+    10. CRITICAL BULLET RULE - ZERO TOLERANCE: 
        - Bullets = plain sentences ONLY
        - NO `<strong>`, NO `<b>`, NO `**markdown**` inside any bullet
        - NO "Title: explanation" pattern
        - Rewrite as complete plain sentences
        - Example: Instead of "<li><strong>Freedom from Commission</strong>: No more 30% cuts</li>"
        - Write: "<li>Developers enjoy freedom from commission with no more 30% platform cuts</li>"
-    10. Avoid all forbidden AI-sounding words and phrases listed above
-    11. End with relatable, actionable conclusion
+    11. Avoid all forbidden AI-sounding words and phrases listed above
+    12. End with relatable, actionable conclusion
     
     Write as if you're explaining this to a friend who's genuinely curious. Be opinionated. Share insights. Make it memorable.
     
-    REMEMBER: Bullets are simple sentences. No titles. No bold. No colons separating parts. Just plain, readable text.
+    REMEMBER: 
+    - Bullets are simple sentences. No titles. No bold. No colons separating parts. Just plain, readable text.
+    - URLs must be REAL - copy them exactly from the RESEARCH DATA. Do not fabricate links.
     """
 
     if feedback and feedback != "APPROVED":
         prompt += f"\n\nFIX PREVIOUS ERRORS: {feedback}"
 
-    response = gpt4o.invoke([SystemMessage(content=system), HumanMessage(content=prompt)])
+    response = gpt5_1.invoke([SystemMessage(content=system), HumanMessage(content=prompt)])
     return {"content_draft": response.content, "iteration_count": state["iteration_count"] + 1}
 
 
@@ -331,7 +337,7 @@ def seo_analyst_node(state: AgentState):
     if word_count < 1100:
         return {"critique_feedback": f"Draft is too short ({word_count} words). EXPAND to 1200-1500 words."}
 
-    links_found = re.findall(r'\[.*?\]\(http.*?\)', draft)
+    links_found = re.findall(r'\[.*?\]\((http.*?)\)', draft)
     if len(links_found) < 2:
         return {"critique_feedback": f"CRITICAL: Only {len(links_found)} links found. Add 2-3 external links from official docs or major tech company blogs (NO GitHub, NO Stack Overflow)."}
     
@@ -341,6 +347,18 @@ def seo_analyst_node(state: AgentState):
         link_lower = link.lower()
         if any(forbidden in link_lower for forbidden in forbidden_sources):
             return {"critique_feedback": f"CRITICAL: Found forbidden link source (GitHub/Stack Overflow). Replace with official documentation or tech company blogs."}
+    
+    # CRITICAL: Validate that links actually exist in research data
+    research_urls = re.findall(r'https?://[^\s\')]+', state.get('research_data', ''))
+    invalid_links = []
+    for link in links_found:
+        # Check if this exact URL or domain exists in research data
+        link_clean = link.strip()
+        if link_clean not in research_urls:
+            invalid_links.append(link_clean)
+    
+    if invalid_links:
+        return {"critique_feedback": f"CRITICAL LINK VALIDATION FAILURE: Found {len(invalid_links)} links that don't exist in research data. These appear to be fabricated/hallucinated URLs: {invalid_links}. ONLY use URLs that actually appear in the RESEARCH DATA provided. Do not make up URLs."}
     
     # CRITICAL: Check for ANY bold/strong formatting in bullet points
     # Pattern 1: Markdown bullets with bold: - **text** or - **text**: 
@@ -385,14 +403,15 @@ def seo_analyst_node(state: AgentState):
             2. **CRITICAL**: Check for AI-sounding words (opt, dive, unlock, unleash, intricate, utilization, transformative, alignment, proactive, scalable, benchmark). If found, REJECT.
             3. **CRITICAL**: Check for AI phrases ("in this world", "in today's world", "at the end of the day", "best practices", "dive into"). If found, REJECT.
             4. **CRITICAL**: NO GitHub or Stack Overflow links allowed. If found, REJECT.
-            5. Conversational H3 headers every 150-200 words
-            6. 2-3 external links from official docs or major tech blogs (Google, AWS, Microsoft blogs)
-            7. 2-3 internal Coder Design links
-            8. Human-like tone: conversational, uses contractions, rhetorical questions, casual phrases
-            9. Mix of short and long sentences (burstiness)
-            10. Starts with engaging hook, ends with actionable conclusion
-            11. Real examples with specific companies/numbers
-            12. Avoids overly polished, robotic language
+            5. **CRITICAL**: All external links must look real and complete (not truncated or malformed). Check that URLs are properly formatted.
+            6. Conversational H3 headers every 150-200 words
+            7. 2-3 external links from official docs or major tech blogs (Google, AWS, Microsoft blogs)
+            8. 2-3 internal Coder Design links
+            9. Human-like tone: conversational, uses contractions, rhetorical questions, casual phrases
+            10. Mix of short and long sentences (burstiness)
+            11. Starts with engaging hook, ends with actionable conclusion
+            12. Real examples with specific companies/numbers
+            13. Avoids overly polished, robotic language
             
             If ALL criteria pass, say 'APPROVED'. Otherwise, list EVERY issue found."""),
         HumanMessage(content=draft)
@@ -408,7 +427,7 @@ def seo_analyst_node(state: AgentState):
 
 def meta_data_node(state: AgentState):
     print("[Meta Data] Generating Metadata & Title...")
-    gpt4_turbo, gpt4o = get_llms()
+    gpt4_turbo, gpt5_1 = get_llms()
     draft = state["content_draft"]
 
     prompt = f"""
@@ -419,7 +438,7 @@ def meta_data_node(state: AgentState):
 
     Blog start: {draft[:1000]}
     """
-    response = gpt4o.invoke([HumanMessage(content=prompt)])
+    response = gpt5_1.invoke([HumanMessage(content=prompt)])
 
     try:
         clean_json = response.content.replace("```json", "").replace("```", "")
@@ -442,7 +461,7 @@ def meta_data_node(state: AgentState):
 
 def visual_node(state: AgentState):
     print("[Visuals] Generating concept...")
-    gpt4_turbo, gpt4o = get_llms()
+    gpt4_turbo, gpt5_1 = get_llms()
 
     image_prompt_system = """You are an expert Art Director creating images for tech articles.
     Your goal is to create a HIGHLY SPECIFIC prompt for DALL-E 3.
@@ -472,7 +491,7 @@ def visual_node(state: AgentState):
     Be concrete and specific, not abstract or generic:
     """
 
-    image_prompt_generator = gpt4o.invoke([
+    image_prompt_generator = gpt5_1.invoke([
         SystemMessage(content=image_prompt_system),
         HumanMessage(content=prompt_request)
     ])
