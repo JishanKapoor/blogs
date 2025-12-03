@@ -196,12 +196,12 @@ def writer_node(state: AgentState):
     5. **Bold** important concepts in normal paragraphs (not bullets).
 
     MANDATORY EXTERNAL LINKS (CRITICAL):
-    - Include at least 8-12 high-quality external links from DIVERSE sources
-    - MUST include links from: GitHub repos, official documentation, Medium articles, Dev.to posts, Hacker News discussions, tech company blogs (Google, Microsoft, Amazon, etc.), academic papers, industry reports
-    - DO NOT rely only on Stack Overflow
-    - Vary your sources: use authoritative tech blogs, open-source projects, conference talks, benchmarks
+    - Include exactly 2-3 high-quality, RELEVANT external links
+    - MUST include links from: Official documentation, GitHub repos, authoritative tech blogs (Google, Microsoft, AWS, etc.), or reputable tech publications
+    - Links MUST be directly relevant to the topic - no tangential references
     - Format: `[Link Text](URL)`
     - Extract URLs from the RESEARCH DATA provided
+    - CRITICAL: Only reference concepts/technologies that are DIRECTLY related to the main topic. Avoid forced or unrelated comparisons.
 
     MANDATORY CODER DESIGN LINKS:
     Naturally weave in these services (use 2-3 per article):
@@ -243,12 +243,12 @@ def seo_analyst_node(state: AgentState):
         return {"critique_feedback": f"Draft is too short ({word_count} words). EXPAND to 1200-1500 words."}
 
     links_found = re.findall(r'\[.*?\]\(http.*?\)', draft)
-    if len(links_found) < 8:
-        return {"critique_feedback": f"CRITICAL: Only {len(links_found)} links found. Add at least 8-12 external hyperlinks from DIVERSE sources (GitHub, official docs, tech blogs, NOT just Stack Overflow)."}
+    if len(links_found) < 2:
+        return {"critique_feedback": f"CRITICAL: Only {len(links_found)} links found. Add 2-3 highly relevant external hyperlinks from authoritative sources (official docs, GitHub, tech company blogs)."}
 
     audit = gpt4_turbo.invoke([
         SystemMessage(
-            content="Audit for: 1. **Bullet Points must NOT contain bold text.** (Reject if you see '**' inside a bullet). 2. Frequent H3 Headers. 3. Internal Coder Design Links. 4. DIVERSE external sources (GitHub, official docs, tech blogs, Medium, Dev.to - NOT just Stack Overflow). 5. Balance of technical AND business insights. If Good, say 'APPROVED'."),
+            content="Audit for: 1. **Bullet Points must NOT contain bold text.** (Reject if you see '**' inside a bullet). 2. Frequent H3 Headers. 3. Internal Coder Design Links. 4. 2-3 RELEVANT external links from authoritative sources. 5. Balance of technical AND business insights. 6. CRITICAL: All examples, comparisons, and references must be DIRECTLY relevant to the main topic. Reject if you see forced/unrelated comparisons or tangential references that don't make logical sense. If Good, say 'APPROVED'."),
         HumanMessage(content=draft)
     ])
 
@@ -298,27 +298,32 @@ def visual_node(state: AgentState):
     print("[Visuals] Generating concept...")
     gpt4_turbo, gpt4o = get_llms()
 
-    image_prompt_system = """You are an expert Art Director. 
-    Your goal is to create a prompt for DALL-E 3.
+    image_prompt_system = """You are an expert Art Director creating images for tech articles.
+    Your goal is to create a HIGHLY SPECIFIC prompt for DALL-E 3.
 
-    CRITICAL RULE: 
-    If the topic is about a specific technology, the image MUST feature visual metaphors for THAT specific technology.
-    - Kubernetes -> Shipping containers, helms.
-    - Python -> Abstract snakes.
-    - React -> Atoms.
-    CRITICAL: Absolutely no text, letters, or numbers anywhere in the image. No signs, labels, or typography of any kind.
-
-
-    DO NOT generate generic 'computer code'.
-    KEEP THE DESCRIPTION CONCISE (Under 50 words).
-    NO TEXT in the image.
+    CRITICAL RULES: 
+    1. The image MUST visually represent the EXACT subject mentioned in the topic
+    2. If it's about a company (Google, Microsoft, etc.), include their recognizable visual identity (colors, logo style, iconic imagery)
+    3. If it's about a specific technology, show that exact technology's visual metaphor:
+       - Kubernetes -> Shipping containers with helm wheels
+       - Python -> Snake imagery with code patterns
+       - React -> Atomic structure, components
+       - Google -> Colorful G colors (blue, red, yellow, green)
+       - AWS -> Orange/cloud imagery
+    4. BE SPECIFIC, not generic. "AI automation" is too vague. "Google's AI automation tools" should show Google's signature colors.
+    5. Absolutely NO text, letters, numbers, or typography anywhere in the image
+    6. High-end 3D render or detailed vector art style
+    7. KEEP DESCRIPTION CONCISE (Under 60 words)
     """
 
     prompt_request = f"""
-    TOPIC: {state['topic']}
-    SUMMARY: {state['content_draft'][:500]}
+    ARTICLE TOPIC: {state['topic']}
+    FINAL TITLE: {state.get('final_title', state['topic'])}
+    CONTENT PREVIEW: {state['content_draft'][:600]}
 
-    Identify the PRIMARY TECH SUBJECT and describe a high-end editorial illustration for it:
+    Create a SPECIFIC image prompt that directly represents the main subject (company, technology, or concept) mentioned in the title.
+    If it's about a specific company or product, reference their visual identity.
+    Be concrete and specific, not abstract or generic:
     """
 
     image_prompt_generator = gpt4o.invoke([
