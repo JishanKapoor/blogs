@@ -112,13 +112,13 @@ def get_llms():
         raise ValueError("OPENAI_API_KEY is missing.")
     return (
         ChatOpenAI(model="gpt-4-turbo", temperature=0.2),
-        ChatOpenAI(model="gpt-5.1", temperature=0.7)
+        ChatOpenAI(model="gpt-4o", temperature=0.7)
     )
 
 
 def trend_spotter_node(state: AgentState):
     print("[Trend Spotter] User did not provide a topic. Rolling dice for category...")
-    gpt4_turbo, gpt5_1 = get_llms()
+    gpt4_turbo, gpt4o = get_llms()
 
     categories, weights = zip(*CATEGORIES_WEIGHTS)
     target_category = random.choices(categories, weights=weights, k=1)[0]
@@ -143,7 +143,7 @@ def trend_spotter_node(state: AgentState):
     5. Output ONLY the topic title - make it compelling
     """
 
-    response = gpt5_1.invoke([
+    response = gpt4o.invoke([
         SystemMessage(content=system_prompt),
         HumanMessage(content=f"Here is the latest news:\n{search_results}")
     ])
@@ -178,7 +178,7 @@ def researcher_node(state: AgentState):
 
 def writer_node(state: AgentState):
     print("[Writer] Drafting content...")
-    gpt4_turbo, gpt5_1 = get_llms()
+    gpt4_turbo, gpt4o = get_llms()
 
     topic = state["topic"]
     instructions = state["custom_instructions"]
@@ -324,7 +324,7 @@ def writer_node(state: AgentState):
     if feedback and feedback != "APPROVED":
         prompt += f"\n\nFIX PREVIOUS ERRORS: {feedback}"
 
-    response = gpt5_1.invoke([SystemMessage(content=system), HumanMessage(content=prompt)])
+    response = gpt4o.invoke([SystemMessage(content=system), HumanMessage(content=prompt)])
     return {"content_draft": response.content, "iteration_count": state["iteration_count"] + 1}
 
 
@@ -427,7 +427,7 @@ def seo_analyst_node(state: AgentState):
 
 def meta_data_node(state: AgentState):
     print("[Meta Data] Generating Metadata & Title...")
-    gpt4_turbo, gpt5_1 = get_llms()
+    gpt4_turbo, gpt4o = get_llms()
     draft = state["content_draft"]
 
     prompt = f"""
@@ -438,7 +438,7 @@ def meta_data_node(state: AgentState):
 
     Blog start: {draft[:1000]}
     """
-    response = gpt5_1.invoke([HumanMessage(content=prompt)])
+    response = gpt4o.invoke([HumanMessage(content=prompt)])
 
     try:
         clean_json = response.content.replace("```json", "").replace("```", "")
@@ -461,7 +461,7 @@ def meta_data_node(state: AgentState):
 
 def visual_node(state: AgentState):
     print("[Visuals] Generating concept...")
-    gpt4_turbo, gpt5_1 = get_llms()
+    gpt4_turbo, gpt4o = get_llms()
 
     image_prompt_system = """You are an expert Art Director creating images for tech articles.
     Your goal is to create a HIGHLY SPECIFIC prompt for DALL-E 3.
@@ -491,7 +491,7 @@ def visual_node(state: AgentState):
     Be concrete and specific, not abstract or generic:
     """
 
-    image_prompt_generator = gpt5_1.invoke([
+    image_prompt_generator = gpt4o.invoke([
         SystemMessage(content=image_prompt_system),
         HumanMessage(content=prompt_request)
     ])
