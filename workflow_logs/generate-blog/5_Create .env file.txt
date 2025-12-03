@@ -1,0 +1,11 @@
+﻿2025-12-03T07:05:09.8554533Z ##[group]Run echo "OPENAI_API_KEY=***" >> .env
+2025-12-03T07:05:09.8555606Z [36;1mecho "OPENAI_API_KEY=***" >> .env[0m
+2025-12-03T07:05:09.8589838Z shell: /usr/bin/bash -e {0}
+2025-12-03T07:05:09.8590075Z env:
+2025-12-03T07:05:09.8590317Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.14/x64
+2025-12-03T07:05:09.8590740Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.14/x64/lib/pkgconfig
+2025-12-03T07:05:09.8591135Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.14/x64
+2025-12-03T07:05:09.8591474Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.14/x64
+2025-12-03T07:05:09.8591826Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.14/x64
+2025-12-03T07:05:09.8592172Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.14/x64/lib
+2025-12-03T07:05:09.8592456Z ##[endgroup]
