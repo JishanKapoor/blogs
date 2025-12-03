@@ -3,11 +3,11 @@ pandas
 openpyxl
 python-dotenv
 openai
-duckduckgo_search
+duckduckgo-search
 playwright
 streamlit
-langchain-openai>=0.1.0
-langchain-core>=0.2.0
-langgraph>=0.1.0
+langchain-openai
+langchain-core
+langgraph
 typing_extensions
-pydantic>=2.0.0
+pydantic
