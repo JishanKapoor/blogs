@@ -1,0 +1,12 @@
+requests
+pandas
+openpyxl
+python-dotenv
+openai
+duckduckgo_search
+playwright
+streamlit
+langchain_openai
+langchain_core
+langgraph
+typing_extensions
