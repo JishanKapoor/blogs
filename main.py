@@ -227,7 +227,14 @@ def writer_node(state: AgentState):
     - High perplexity (varied structures) and burstiness (mix of short/long sentences)
 
     CRITICAL FORMATTING RULES:
-    1. **BULLET POINTS**: ABSOLUTELY NO BOLD TEXT inside bullets. No `**text**` in any bullet point. Plain text only.
+    1. **BULLET POINTS - ABSOLUTE RULE**: 
+       - ZERO bold text (`**text**` or `<strong>text</strong>`) inside bullets
+       - NO colons after bold headings in bullets
+       - Format must be: `- Simple plain text` or `<li>Simple plain text</li>`
+       - NEVER: `- **Bold heading**: explanation` or `<li><strong>Bold</strong>: text</li>`
+       - Example CORRECT: `<li>Clean, minimal design</li>` or `- Use AI to enhance creativity`
+       - Example WRONG: `<li><strong>Embrace AI</strong>: Use it wisely</li>` or `- **Key point**: Details here`
+       - Plain text only, no formatting within bullets
     2. **NO EXTRA SPACING** in bullet points - keep them tight
     3. **H3 HEADERS**: Use them every 150-200 words, make them conversational
     4. **SHORT PARAGRAPHS**: Maximum 3-4 sentences usually
@@ -284,11 +291,13 @@ def writer_node(state: AgentState):
     6. Mix sentence lengths dramatically for burstiness
     7. Add subtle emotional cues and rhetorical questions
     8. Include real company names, specific numbers, concrete examples
-    9. ABSOLUTELY NO bold text (`**text**`) inside bullet points
-    10. Avoid all forbidden AI-sounding words and phrases listed above
-    11. End with relatable, actionable conclusion
+    9. CRITICAL BULLET RULE: Bullets must be plain text ONLY. Format: `<li>Plain text here</li>` or `- Plain text here`
+    10. NEVER use bold/strong tags or markdown inside bullets: NO `<li><strong>Title</strong>: text</li>` or `- **Bold**: text`
+    11. Avoid all forbidden AI-sounding words and phrases listed above
+    12. End with relatable, actionable conclusion
     
     Write as if you're explaining this to a friend who's genuinely curious. Be opinionated. Share insights. Make it memorable.
+    Keep bullets SIMPLE and CLEAN - just plain text, nothing fancy.
     """
 
     if feedback and feedback != "APPROVED":
@@ -317,11 +326,29 @@ def seo_analyst_node(state: AgentState):
         link_lower = link.lower()
         if any(forbidden in link_lower for forbidden in forbidden_sources):
             return {"critique_feedback": f"CRITICAL: Found forbidden link source (GitHub/Stack Overflow). Replace with official documentation or tech company blogs."}
+    
+    # CRITICAL: Check for bold text in bullet points
+    # Pattern 1: Markdown bullets with bold: - **text** or - **text**: 
+    markdown_bold_bullets = re.findall(r'[-*]\s+\*\*[^*]+\*\*', draft)
+    if markdown_bold_bullets:
+        return {"critique_feedback": f"CRITICAL BULLET VIOLATION: Found bold text in bullet points (markdown format). Bullets must be plain text only. Examples found: {markdown_bold_bullets[:2]}"}
+    
+    # Pattern 2: HTML bullets with strong: <li><strong>text</strong>
+    html_bold_bullets = re.findall(r'<li>\s*<strong>[^<]+</strong>', draft)
+    if html_bold_bullets:
+        return {"critique_feedback": f"CRITICAL BULLET VIOLATION: Found <strong> tags in <li> bullets. Bullets must be plain text only. Examples: {html_bold_bullets[:2]}"}
 
     audit = gpt4_turbo.invoke([
         SystemMessage(
             content="""Audit this content with STRICT criteria:
-            1. **CRITICAL**: Bullet points must have ZERO bold text. If you see `**text**` inside ANY bullet point, REJECT immediately.
+            1. **CRITICAL BULLET POINT CHECK**: Bullets must be 100% plain text. REJECT if you see:
+               - `**text**` inside bullets
+               - `<strong>text</strong>` inside bullets  
+               - Pattern like `- **Title**: explanation` or `<li><strong>Title</strong>: text</li>`
+               - ANY formatting inside bullet points
+               CORRECT format: `<li>Simple plain text</li>` or `- Simple plain text`
+               If ANY bullet has bold/strong tags or markdown, REJECT IMMEDIATELY.
+            
             2. **CRITICAL**: Check for AI-sounding words (opt, dive, unlock, unleash, intricate, utilization, transformative, alignment, proactive, scalable, benchmark). If found, REJECT.
             3. **CRITICAL**: Check for AI phrases ("in this world", "in today's world", "at the end of the day", "best practices", "dive into"). If found, REJECT.
             4. **CRITICAL**: NO GitHub or Stack Overflow links allowed. If found, REJECT.
