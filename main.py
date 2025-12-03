@@ -157,13 +157,13 @@ def trend_spotter_node(state: AgentState):
 def researcher_node(state: AgentState):
     print(f"[Researcher] Investigating: {state['topic']}")
     
-    # Multiple searches for engaging, diverse content
+    # Targeted searches for authoritative sources (NO GitHub or Stack Overflow)
     queries = [
-        f"{state['topic']} latest news controversy debate",
-        f"{state['topic']} real-world examples case studies companies",
-        f"{state['topic']} statistics data numbers impact",
-        f"{state['topic']} expert opinions industry leaders",
-        f"{state['topic']} official documentation GitHub"
+        f"{state['topic']} official documentation",
+        f"{state['topic']} real-world case studies companies",
+        f"{state['topic']} statistics data industry report",
+        f"{state['topic']} expert analysis tech blog",
+        f"{state['topic']} Google AWS Microsoft blog"
     ]
     
     all_data = []
@@ -184,83 +184,111 @@ def writer_node(state: AgentState):
     instructions = state["custom_instructions"]
     feedback = state.get("critique_feedback", None)
 
-    system = """You are a Senior Tech Columnist for Coder Design.
+    system = """You are a world-class SEO content writer specializing in generating content that is indistinguishable from human authorship. Your expertise lies in capturing emotional nuance, cultural relevance, and contextual authenticity, ensuring content that resonates naturally with any audience focused on tech, full-stack development, SEO, and machine learning.
 
-    CORE OBJECTIVE: Write an ENGAGING, conversational deep-dive (1200-1500 words) that combines technical depth with business insights.
+    CORE OBJECTIVE: Write a 1200-1500 word article that feels genuinely human-written, not AI-generated.
 
-    WRITING STYLE - MAKE IT ENGAGING:
-    - Write like you're having a conversation with a smart colleague over coffee
-    - Start with a HOOK: surprising stat, provocative question, or bold statement
-    - Use "you" and "we" - talk directly to the reader
-    - Include real-world anecdotes and specific examples (e.g., "Remember when Facebook rebranded to Meta?")
-    - Ask rhetorical questions to engage readers
-    - Use analogies and metaphors to explain complex concepts
-    - Show personality - be opinionated when appropriate
-    - Break the fourth wall occasionally ("Here's the thing nobody tells you...")
-    - Include controversy or debate when relevant
-    - Use contractions (don't, won't, here's) for natural flow
+    WRITING STYLE - AUTHENTIC HUMAN VOICE:
+    - Conversational and engaging, like talking to a smart colleague
+    - Use contractions naturally (don't, won't, here's, that's)
+    - Include casual phrases: "You know what?", "Honestly", "Here's the thing"
+    - Rhetorical questions to engage: "But why does this matter?"
+    - Mix professional jargon with casual explanations
+    - Add emotional cues and relatable moments
+    - Use idioms and colloquialisms naturally
+    - Mild contradictions you later explain ("At first glance X, but actually Y")
+    - Natural digressions that connect back to the main point
+    - Transitional phrases: "Let me explain", "Here's what I mean"
 
-    CONTENT STRATEGY:
-    - Balance technical implementation details (40%) with business impact and strategy (30%)
-    - Lead with WHY before HOW - explain the impact first
-    - Include specific numbers, percentages, and data points
-    - Name-drop real companies, products, and people when relevant
-    - Discuss failures and lessons learned, not just successes
-    - Cover ROI, cost implications, market trends, and competitive advantages
-    - Include actionable takeaways readers can use immediately
-    - End with a thought-provoking conclusion or call-to-action
+    FLESCH READING EASE: Target around 80
+    - Mix short punchy sentences with longer complex ones
+    - Keep it readable but not dumbed down
+    - Use dependency grammar for easy comprehension
 
-    STRUCTURE FOR ENGAGEMENT:
-    - Opening: Strong hook + context (2-3 paragraphs)
-    - Body: Mix of explanation, examples, data, and insights
-    - Subheadings: Make them intriguing, not generic ("The Problem Nobody Saw Coming" vs "Challenges")
-    - Closing: Memorable takeaway or future prediction
+    VOCABULARY & STYLE:
+    - Diverse vocabulary with unexpected word choices
+    - Industry-specific metaphors and analogies from everyday life
+    - Reference real tools, brands, companies when relevant
+    - Include mild repetition for emphasis (humans do this naturally)
+    - Mix active and passive voice (lean towards active)
+    - Varied punctuation (dashes, semicolons, parentheses)
+    - Mix formal and casual language naturally
 
-    CRITICAL FORMATTING RULES (STRICT):
-    1. **USE BULLET POINTS** for lists.
-    2. **STRICT BULLET RULE**: Do NOT use bold text (`**text**`) inside bullet points. Bullets must be plain text.
-    3. **USE H3 HEADERS FREQUENTLY**: Every 150-200 words, create a new `### Subtopic Header`.
-    4. **SHORT PARAGRAPHS**: Maximum 3 sentences per paragraph.
-    5. **Bold** important concepts in normal paragraphs (not bullets).
-    6. Use specific numbers and data points to add credibility
+    FORBIDDEN WORDS/PHRASES (AVOID THESE - THEY SCREAM AI):
+    Words: opt, dive, unlock, unleash, intricate, utilization, transformative, alignment, proactive, scalable, benchmark
+    Phrases: "In this world", "in today's world", "at the end of the day", "on the same page", "end-to-end", "in order to", "best practices", "dive into"
 
-    MANDATORY EXTERNAL LINKS (CRITICAL):
-    - Include exactly 2-3 high-quality, RELEVANT external links
-    - MUST include links from: Official documentation, GitHub repos, authoritative tech blogs (Google, Microsoft, AWS, etc.), or reputable tech publications
-    - Links MUST be directly relevant to the topic - no tangential references
+    STRUCTURAL ELEMENTS:
+    - Vary paragraph lengths (1 to 7 sentences) 
+    - Short paragraphs for impact, longer for explanation
+    - Use bulleted lists SPARINGLY and naturally (only when truly needed)
+    - Conversational subheadings that sound human-written
+    - Dynamic rhythm across paragraphs
+    - High perplexity (varied structures) and burstiness (mix of short/long sentences)
+
+    CRITICAL FORMATTING RULES:
+    1. **BULLET POINTS**: ABSOLUTELY NO BOLD TEXT inside bullets. No `**text**` in any bullet point. Plain text only.
+    2. **NO EXTRA SPACING** in bullet points - keep them tight
+    3. **H3 HEADERS**: Use them every 150-200 words, make them conversational
+    4. **SHORT PARAGRAPHS**: Maximum 3-4 sentences usually
+    5. **Bold** important concepts in regular paragraphs (NOT in bullets)
+
+    EXTERNAL LINKS (2-3 ONLY):
+    - NO GitHub links
+    - NO Stack Overflow links  
+    - Use: Official documentation, reputable tech publications, major tech company blogs (Google AI Blog, AWS Blog, Microsoft DevBlogs)
+    - Links must be directly relevant and add real value
     - Format: `[Link Text](URL)`
-    - Extract URLs from the RESEARCH DATA provided
-    - CRITICAL: Only reference concepts/technologies that are DIRECTLY related to the main topic. Avoid forced or unrelated comparisons.
+    - Extract from RESEARCH DATA provided
 
-    MANDATORY CODER DESIGN LINKS:
-    Naturally weave in these services (use 2-3 per article):
+    INTERNAL LINKS (Weave in 2-3 naturally):
     - Mobile Development: https://www.coderdesign.com/mobile-app-development
     - Full Stack: https://www.coderdesign.com/full-stack-engineering
     - AI Workflow: https://www.coderdesign.com/ai-workflow
     - SEO Services: https://www.coderdesign.com/seo-management
     - Contact Us: https://www.coderdesign.com/contact
+
+    CONTENT STRATEGY:
+    - Start with a HOOK: personal anecdote, surprising stat, or "You know what?"
+    - Balance technical depth (40%) with business impact (30%)
+    - Real-world examples with specific companies and numbers
+    - Discuss both wins AND failures (humans admit mistakes)
+    - Include actionable takeaways
+    - End with thought-provoking conclusion or relatable call-to-action
+    - Seasonal elements or current trends when relevant
+    - Cultural references that resonate
+
+    HUMAN AUTHENTICITY CHECKLIST:
+    - Does it sound like a person wrote this over coffee?
+    - Would you share this with a colleague?
+    - Are there natural imperfections and casual moments?
+    - Does it avoid robotic, overly-polished language?
+    - Is there personality and opinion showing through?
     """
 
     prompt = f"""
     TOPIC: {topic}
+    TARGET AUDIENCE: Tech professionals, developers, business stakeholders interested in full-stack, SEO, AI/ML
+    WORD COUNT: 1200-1500 words
     CUSTOM INSTRUCTIONS: {instructions}
 
-    RESEARCH DATA (CONTAINS DIVERSE URLs - USE THEM ALL):
+    RESEARCH DATA (Use for context and finding authoritative external links - NO GitHub or Stack Overflow):
     {state['research_data']}
     
-    IMPORTANT: Make this piece ENGAGING and memorable by:
-    - Starting with a surprising fact or bold statement about {topic}
-    - Using conversational tone throughout
-    - Including specific real-world examples with company names and numbers
-    - Being opinionated - take a stance on controversies or debates
-    - Ending with an actionable insight or thought-provoking question
-    - Writing like you're explaining this to a friend who's genuinely curious
+    CRITICAL REQUIREMENTS:
+    1. Write like a human expert, NOT an AI
+    2. Start with engaging hook (anecdote, "You know what?", surprising fact)
+    3. Use conversational transitions and casual phrases naturally
+    4. Include 2-3 external links ONLY from official docs or major tech blogs
+    5. NO GitHub, NO Stack Overflow links
+    6. Mix sentence lengths dramatically for burstiness
+    7. Add subtle emotional cues and rhetorical questions
+    8. Include real company names, specific numbers, concrete examples
+    9. ABSOLUTELY NO bold text (`**text**`) inside bullet points
+    10. Avoid all forbidden AI-sounding words and phrases listed above
+    11. End with relatable, actionable conclusion
     
-    Vary your approach:
-    - Tone: Conversational yet authoritative
-    - Structure: Mix storytelling with technical analysis
-    - Technical vs Business balance: Adjust based on topic, but always explain "so what?"
-    - Include practical examples, specific metrics, or real company case studies
+    Write as if you're explaining this to a friend who's genuinely curious. Be opinionated. Share insights. Make it memorable.
     """
 
     if feedback and feedback != "APPROVED":
@@ -281,11 +309,32 @@ def seo_analyst_node(state: AgentState):
 
     links_found = re.findall(r'\[.*?\]\(http.*?\)', draft)
     if len(links_found) < 2:
-        return {"critique_feedback": f"CRITICAL: Only {len(links_found)} links found. Add 2-3 highly relevant external hyperlinks from authoritative sources (official docs, GitHub, tech company blogs)."}
+        return {"critique_feedback": f"CRITICAL: Only {len(links_found)} links found. Add 2-3 external links from official docs or major tech company blogs (NO GitHub, NO Stack Overflow)."}
+    
+    # Check for forbidden sources
+    forbidden_sources = ['github.com', 'stackoverflow.com', 'stackexchange.com']
+    for link in links_found:
+        link_lower = link.lower()
+        if any(forbidden in link_lower for forbidden in forbidden_sources):
+            return {"critique_feedback": f"CRITICAL: Found forbidden link source (GitHub/Stack Overflow). Replace with official documentation or tech company blogs."}
 
     audit = gpt4_turbo.invoke([
         SystemMessage(
-            content="Audit for: 1. **Bullet Points must NOT contain bold text.** (Reject if you see '**' inside a bullet). 2. Frequent H3 Headers. 3. Internal Coder Design Links. 4. 2-3 RELEVANT external links from authoritative sources. 5. Balance of technical AND business insights. 6. CRITICAL: All examples, comparisons, and references must be DIRECTLY relevant to the main topic. Reject if you see forced/unrelated comparisons or tangential references that don't make logical sense. 7. ENGAGEMENT: Must have conversational tone, specific examples with company names/numbers, strong opening hook, and thought-provoking conclusion. Reject if too dry or academic. If Good, say 'APPROVED'."),
+            content="""Audit this content with STRICT criteria:
+            1. **CRITICAL**: Bullet points must have ZERO bold text. If you see `**text**` inside ANY bullet point, REJECT immediately.
+            2. **CRITICAL**: Check for AI-sounding words (opt, dive, unlock, unleash, intricate, utilization, transformative, alignment, proactive, scalable, benchmark). If found, REJECT.
+            3. **CRITICAL**: Check for AI phrases ("in this world", "in today's world", "at the end of the day", "best practices", "dive into"). If found, REJECT.
+            4. **CRITICAL**: NO GitHub or Stack Overflow links allowed. If found, REJECT.
+            5. Conversational H3 headers every 150-200 words
+            6. 2-3 external links from official docs or major tech blogs (Google, AWS, Microsoft blogs)
+            7. 2-3 internal Coder Design links
+            8. Human-like tone: conversational, uses contractions, rhetorical questions, casual phrases
+            9. Mix of short and long sentences (burstiness)
+            10. Starts with engaging hook, ends with actionable conclusion
+            11. Real examples with specific companies/numbers
+            12. Avoids overly polished, robotic language
+            
+            If ALL criteria pass, say 'APPROVED'. Otherwise, list specific issues to fix."""),
         HumanMessage(content=draft)
     ])
 
