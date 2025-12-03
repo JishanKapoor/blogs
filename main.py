@@ -124,15 +124,23 @@ def trend_spotter_node(state: AgentState):
     target_category = random.choices(categories, weights=weights, k=1)[0]
     print(f"[Trend Spotter] Selected Category: {target_category}")
 
-    search_query = f"trending {target_category} news controversy 2025"
+    search_query = f"trending {target_category} news controversy debate 2025"
     search_results = perform_web_search(search_query)
 
-    system_prompt = f"""You are an Editor-in-Chief.
-    Your goal: Pick the most engaging news story about {target_category}.
+    system_prompt = f"""You are an Editor-in-Chief looking for ENGAGING story angles.
+    Your goal: Pick the most compelling, conversation-worthy news story about {target_category}.
+    
     Criteria:
-    1. Must be strictly related to {target_category}.
-    2. Must be specific.
-    3. Output ONLY the topic title.
+    1. Must be strictly related to {target_category}
+    2. Must be INTERESTING - something people will want to read and share
+    3. Prefer stories with:
+       - Controversy or debate
+       - Surprising developments or data
+       - Major company announcements
+       - Paradigm shifts or industry changes
+       - Real-world impact
+    4. Avoid generic tutorials or basic explanations
+    5. Output ONLY the topic title - make it compelling
     """
 
     response = gpt4o.invoke([
@@ -149,13 +157,13 @@ def trend_spotter_node(state: AgentState):
 def researcher_node(state: AgentState):
     print(f"[Researcher] Investigating: {state['topic']}")
     
-    # Multiple searches for diverse sources
+    # Multiple searches for engaging, diverse content
     queries = [
-        f"{state['topic']} technical analysis implementation",
-        f"{state['topic']} GitHub repository examples",
-        f"{state['topic']} official documentation",
-        f"{state['topic']} business impact ROI case study",
-        f"{state['topic']} best practices industry standards"
+        f"{state['topic']} latest news controversy debate",
+        f"{state['topic']} real-world examples case studies companies",
+        f"{state['topic']} statistics data numbers impact",
+        f"{state['topic']} expert opinions industry leaders",
+        f"{state['topic']} official documentation GitHub"
     ]
     
     all_data = []
@@ -178,15 +186,35 @@ def writer_node(state: AgentState):
 
     system = """You are a Senior Tech Columnist for Coder Design.
 
-    CORE OBJECTIVE: Write an engaging deep-dive (1200-1500 words) that combines TECHNICAL depth with BUSINESS insights.
+    CORE OBJECTIVE: Write an ENGAGING, conversational deep-dive (1200-1500 words) that combines technical depth with business insights.
+
+    WRITING STYLE - MAKE IT ENGAGING:
+    - Write like you're having a conversation with a smart colleague over coffee
+    - Start with a HOOK: surprising stat, provocative question, or bold statement
+    - Use "you" and "we" - talk directly to the reader
+    - Include real-world anecdotes and specific examples (e.g., "Remember when Facebook rebranded to Meta?")
+    - Ask rhetorical questions to engage readers
+    - Use analogies and metaphors to explain complex concepts
+    - Show personality - be opinionated when appropriate
+    - Break the fourth wall occasionally ("Here's the thing nobody tells you...")
+    - Include controversy or debate when relevant
+    - Use contractions (don't, won't, here's) for natural flow
 
     CONTENT STRATEGY:
     - Balance technical implementation details (40%) with business impact and strategy (30%)
-    - Include real-world examples, case studies, and industry applications
-    - Discuss ROI, cost implications, market trends, and competitive advantages
-    - Cover both developer perspective AND business stakeholder viewpoint
-    - Vary your writing style: mix tutorials, analysis, opinion, and storytelling
-    - Use different angles: sometimes controversial, sometimes educational, sometimes forward-looking
+    - Lead with WHY before HOW - explain the impact first
+    - Include specific numbers, percentages, and data points
+    - Name-drop real companies, products, and people when relevant
+    - Discuss failures and lessons learned, not just successes
+    - Cover ROI, cost implications, market trends, and competitive advantages
+    - Include actionable takeaways readers can use immediately
+    - End with a thought-provoking conclusion or call-to-action
+
+    STRUCTURE FOR ENGAGEMENT:
+    - Opening: Strong hook + context (2-3 paragraphs)
+    - Body: Mix of explanation, examples, data, and insights
+    - Subheadings: Make them intriguing, not generic ("The Problem Nobody Saw Coming" vs "Challenges")
+    - Closing: Memorable takeaway or future prediction
 
     CRITICAL FORMATTING RULES (STRICT):
     1. **USE BULLET POINTS** for lists.
@@ -194,6 +222,7 @@ def writer_node(state: AgentState):
     3. **USE H3 HEADERS FREQUENTLY**: Every 150-200 words, create a new `### Subtopic Header`.
     4. **SHORT PARAGRAPHS**: Maximum 3 sentences per paragraph.
     5. **Bold** important concepts in normal paragraphs (not bullets).
+    6. Use specific numbers and data points to add credibility
 
     MANDATORY EXTERNAL LINKS (CRITICAL):
     - Include exactly 2-3 high-quality, RELEVANT external links
@@ -219,11 +248,19 @@ def writer_node(state: AgentState):
     RESEARCH DATA (CONTAINS DIVERSE URLs - USE THEM ALL):
     {state['research_data']}
     
-    IMPORTANT: Make this piece unique by varying:
-    - Tone: Choose from authoritative, conversational, analytical, or provocative
-    - Structure: Mix how-to guides, opinion pieces, trend analysis, or comparison articles
-    - Technical vs Business balance: Adjust based on topic relevance
-    - Include practical code examples, architecture diagrams (described), or business metrics where relevant
+    IMPORTANT: Make this piece ENGAGING and memorable by:
+    - Starting with a surprising fact or bold statement about {topic}
+    - Using conversational tone throughout
+    - Including specific real-world examples with company names and numbers
+    - Being opinionated - take a stance on controversies or debates
+    - Ending with an actionable insight or thought-provoking question
+    - Writing like you're explaining this to a friend who's genuinely curious
+    
+    Vary your approach:
+    - Tone: Conversational yet authoritative
+    - Structure: Mix storytelling with technical analysis
+    - Technical vs Business balance: Adjust based on topic, but always explain "so what?"
+    - Include practical examples, specific metrics, or real company case studies
     """
 
     if feedback and feedback != "APPROVED":
@@ -248,7 +285,7 @@ def seo_analyst_node(state: AgentState):
 
     audit = gpt4_turbo.invoke([
         SystemMessage(
-            content="Audit for: 1. **Bullet Points must NOT contain bold text.** (Reject if you see '**' inside a bullet). 2. Frequent H3 Headers. 3. Internal Coder Design Links. 4. 2-3 RELEVANT external links from authoritative sources. 5. Balance of technical AND business insights. 6. CRITICAL: All examples, comparisons, and references must be DIRECTLY relevant to the main topic. Reject if you see forced/unrelated comparisons or tangential references that don't make logical sense. If Good, say 'APPROVED'."),
+            content="Audit for: 1. **Bullet Points must NOT contain bold text.** (Reject if you see '**' inside a bullet). 2. Frequent H3 Headers. 3. Internal Coder Design Links. 4. 2-3 RELEVANT external links from authoritative sources. 5. Balance of technical AND business insights. 6. CRITICAL: All examples, comparisons, and references must be DIRECTLY relevant to the main topic. Reject if you see forced/unrelated comparisons or tangential references that don't make logical sense. 7. ENGAGEMENT: Must have conversational tone, specific examples with company names/numbers, strong opening hook, and thought-provoking conclusion. Reject if too dry or academic. If Good, say 'APPROVED'."),
         HumanMessage(content=draft)
     ])
 
