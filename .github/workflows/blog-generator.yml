@@ -24,6 +24,9 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          python -m pip install playwright
+      - name: Install Playwright browsers
+        run: python -m playwright install chromium
           
       - name: Install Playwright browsers
         run: |
@@ -35,4 +38,6 @@ jobs:
           echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" > .env
 
       - name: Run blog generator
+        env:
+          DISABLE_UPLOAD: ''
         run: python main.py
