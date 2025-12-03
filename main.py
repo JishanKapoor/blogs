@@ -16,11 +16,7 @@ from langchain_openai import ChatOpenAI
 from langchain_core.messages import SystemMessage, HumanMessage, BaseMessage
 from langgraph.graph import StateGraph, START, END
 
-# Handling the library rename warning
-try:
-    from duckduckgo_search import DDGS
-except ImportError:
-    from ddgs import DDGS
+# No external search engines; we'll ask the AI for candidate URLs
 
 # Automation Imports
 from playwright.async_api import async_playwright
@@ -63,14 +59,39 @@ class AgentState(TypedDict):
 
 
 # --- 2. TOOLS ---
-def perform_web_search(query: str):
-    print(f"[Tool] Searching Web: {query}")
+def suggest_authoritative_urls(topic: str, max_urls: int = 5) -> List[str]:
+    print(f"[Tool] Asking AI for authoritative URLs: {topic}")
+    gpt4_turbo, gpt5_1 = get_llms()
+    prompt = f"""
+    Provide {max_urls} authoritative, direct URLs relevant to this topic. Prefer official docs or major tech blogs.
+    Topic: {topic}
+    STRICT RULES:
+    - Return ONLY raw URLs, one per line, no extra text.
+    - No GitHub, Stack Overflow, or aggregator/search result links.
+    - Must be accessible public pages (not behind auth).
+    - Avoid tracking parameters; use canonical URLs.
+    """
+    resp = gpt5_1.invoke([HumanMessage(content=prompt)])
+    urls = [u.strip() for u in resp.content.splitlines() if u.strip().startswith("http")]
+    return urls[:max_urls]
+
+def fetch_url(url: str) -> Optional[str]:
     try:
-        results = DDGS().text(keywords=query, max_results=5)
-        return "\n\n".join([f"SOURCE TITLE: {r['title']}\nLINK: {r['href']}\nINFO: {r['body']}" for r in results])
-    except Exception as e:
-        print(f"[Error] Search failed: {e}")
-        return ""
+        # Try HEAD first to check availability
+        h = requests.head(url, timeout=15, allow_redirects=True)
+        if h.status_code >= 400:
+            return None
+        # Fetch content
+        r = requests.get(url, timeout=20)
+        if r.status_code >= 400:
+            return None
+        ct = r.headers.get('Content-Type', '')
+        if 'text/html' not in ct and 'application/json' not in ct:
+            # Accept HTML or JSON; skip others
+            return None
+        return r.text[:10000]  # cap to 10k chars
+    except Exception:
+        return None
 
 
 def generate_relevant_image(scene_description: str):
@@ -112,20 +133,21 @@ def get_llms():
         raise ValueError("OPENAI_API_KEY is missing.")
     return (
         ChatOpenAI(model="gpt-4-turbo", temperature=0.2),
-        ChatOpenAI(model="gpt-4o", temperature=0.7)
+        ChatOpenAI(model="gpt-5.1", temperature=0.6)
     )
 
 
 def trend_spotter_node(state: AgentState):
     print("[Trend Spotter] User did not provide a topic. Rolling dice for category...")
-    gpt4_turbo, gpt4o = get_llms()
+    gpt4_turbo, gpt5_1 = get_llms()
 
     categories, weights = zip(*CATEGORIES_WEIGHTS)
     target_category = random.choices(categories, weights=weights, k=1)[0]
     print(f"[Trend Spotter] Selected Category: {target_category}")
 
     search_query = f"trending {target_category} news controversy debate 2025"
-    search_results = perform_web_search(search_query)
+    # Instead of external search, we rely on AI + later URL validation in researcher
+    search_results = f"AI-selected category: {target_category}."
 
     system_prompt = f"""You are an Editor-in-Chief looking for ENGAGING story angles.
     Your goal: Pick the most compelling, conversation-worthy news story about {target_category}.
@@ -143,7 +165,7 @@ def trend_spotter_node(state: AgentState):
     5. Output ONLY the topic title - make it compelling
     """
 
-    response = gpt4o.invoke([
+    response = gpt5_1.invoke([
         SystemMessage(content=system_prompt),
         HumanMessage(content=f"Here is the latest news:\n{search_results}")
     ])
@@ -157,28 +179,27 @@ def trend_spotter_node(state: AgentState):
 def researcher_node(state: AgentState):
     print(f"[Researcher] Investigating: {state['topic']}")
     
-    # Targeted searches for authoritative sources (NO GitHub or Stack Overflow)
-    queries = [
-        f"{state['topic']} official documentation",
-        f"{state['topic']} real-world case studies companies",
-        f"{state['topic']} statistics data industry report",
-        f"{state['topic']} expert analysis tech blog",
-        f"{state['topic']} Google AWS Microsoft blog"
-    ]
-    
-    all_data = []
-    for query in queries:
-        data = perform_web_search(query)
-        if data:
-            all_data.append(data)
-    
-    combined_data = "\n\n--- NEW SEARCH ---\n\n".join(all_data)
+    # Ask AI for candidate URLs, then fetch and validate them.
+    candidate_urls = suggest_authoritative_urls(state['topic'], max_urls=6)
+    valid_blobs = []
+    working_urls = []
+    for u in candidate_urls:
+        if any(dom in u.lower() for dom in ["github.com", "stackoverflow.com", "stackexchange.com"]):
+            continue
+        content = fetch_url(u)
+        if content:
+            working_urls.append(u)
+            # Keep a compact snippet with URL header to feed writer/link validation
+            snippet = content
+            valid_blobs.append(f"SOURCE URL: {u}\nCONTENT SNIPPET:\n{snippet}")
+    combined_data = "\n\n--- VERIFIED SOURCE ---\n\n".join(valid_blobs)
+    # If none validated, still pass empty data to force writer to avoid external links
     return {"research_data": combined_data, "iteration_count": 0}
 
 
 def writer_node(state: AgentState):
     print("[Writer] Drafting content...")
-    gpt4_turbo, gpt4o = get_llms()
+    gpt4_turbo, gpt5_1 = get_llms()
 
     topic = state["topic"]
     instructions = state["custom_instructions"]
@@ -226,22 +247,23 @@ def writer_node(state: AgentState):
     - Dynamic rhythm across paragraphs
     - High perplexity (varied structures) and burstiness (mix of short/long sentences)
 
-    CRITICAL FORMATTING RULES:
+     CRITICAL FORMATTING RULES:
     1. **BULLET POINTS - ABSOLUTE ZERO TOLERANCE RULE**: 
        - ABSOLUTELY NO formatting tags of any kind inside bullets
        - NO `**bold**` markdown
        - NO `<strong>text</strong>` HTML tags
        - NO `<b>text</b>` HTML tags
-       - NO colons after headings in bullets like "Title: explanation"
+         - NO colons after headings in bullets like "Title: explanation"
+         - LENGTH LIMIT: Each bullet MUST be 3–4 words max (short labels). No long sentences.
        
        FORMAT MUST BE EXACTLY:
-       ✓ CORRECT: `<li>Freedom from Commission with no more 30% cuts and competitive pricing</li>`
-       ✓ CORRECT: `- Developers can price their apps more competitively without commission fees`
+    ✓ CORRECT: `<li>Commission-free pricing</li>`
+    ✓ CORRECT: `- Competitive pricing`
        
        ✗ WRONG: `<li><strong>Freedom from Commission</strong>: No more 30% cuts</li>`
        ✗ WRONG: `- **Key Point**: Explanation here`
        
-       REWRITE bullet content as a single plain sentence without any bold titles or separators.
+    REWRITE bullet content as a short label (3–4 words), without any bold titles or separators.
        If you need to emphasize something, put it in a regular paragraph BEFORE the bullets.
        
     2. **NO EXTRA SPACING** in bullet points - keep them tight
@@ -260,7 +282,7 @@ def writer_node(state: AgentState):
     - Format: `[Link Text](URL)`
     - Double-check each URL is copied exactly from RESEARCH DATA
 
-    INTERNAL LINKS (Weave in 2-3 naturally):
+    INTERNAL LINKS (Weave in at least 2 naturally):
     - Mobile Development: https://www.coderdesign.com/mobile-app-development
     - Full Stack: https://www.coderdesign.com/full-stack-engineering
     - AI Workflow: https://www.coderdesign.com/ai-workflow
@@ -317,15 +339,58 @@ def writer_node(state: AgentState):
     Write as if you're explaining this to a friend who's genuinely curious. Be opinionated. Share insights. Make it memorable.
     
     REMEMBER: 
-    - Bullets are simple sentences. No titles. No bold. No colons separating parts. Just plain, readable text.
+    - Bullets are short labels (3–4 words). No bold. No colons.
     - URLs must be REAL - copy them exactly from the RESEARCH DATA. Do not fabricate links.
     """
 
     if feedback and feedback != "APPROVED":
         prompt += f"\n\nFIX PREVIOUS ERRORS: {feedback}"
 
-    response = gpt4o.invoke([SystemMessage(content=system), HumanMessage(content=prompt)])
-    return {"content_draft": response.content, "iteration_count": state["iteration_count"] + 1}
+    response = gpt5_1.invoke([SystemMessage(content=system), HumanMessage(content=prompt)])
+
+    def sanitize_bullets(text: str) -> str:
+        # Convert HTML <li> bullets to max 4 words
+        def shorten_phrase(phrase: str) -> str:
+            # Basic heuristic: keep first 4 significant words
+            import re
+            stop = {"the","a","an","and","or","but","with","of","for","to","in","on"}
+            words = [w for w in re.sub(r"[<>/]*", "", phrase).split()]
+            short = []
+            for w in words:
+                clean = re.sub(r"[^A-Za-z0-9-]", "", w)
+                if not clean:
+                    continue
+                lw = clean.lower()
+                if lw in stop and len(short) > 0:
+                    continue
+                short.append(clean)
+                if len(short) >= 4:
+                    break
+            if not short:
+                short = words[:4]
+            return " ".join(short)
+
+        # HTML bullets
+        text = re.sub(r"<li>(.*?)</li>", lambda m: f"<li>{shorten_phrase(m.group(1))}</li>", text, flags=re.DOTALL)
+        # Markdown bullets
+        text = re.sub(r"^[\-\*]\s+(.+)$", lambda m: f"- {shorten_phrase(m.group(1))}", text, flags=re.MULTILINE)
+        return text
+
+    cleaned = sanitize_bullets(response.content)
+    # Ensure at least 2 internal coderdesign links are present; if missing, append a short section
+    coder_links = [
+        "https://www.coderdesign.com/mobile-app-development",
+        "https://www.coderdesign.com/full-stack-engineering",
+        "https://www.coderdesign.com/ai-workflow",
+        "https://www.coderdesign.com/seo-management",
+        "https://www.coderdesign.com/contact",
+    ]
+    present = sum(1 for url in coder_links if url in cleaned)
+    if present < 2:
+        extras = coder_links[:2]
+        cleaned += "\n\nExplore more: " + "; ".join(f"[{u.split('/')[-1]}]({u})" for u in extras)
+
+    return {"content_draft": cleaned, "iteration_count": state["iteration_count"] + 1}
 
 
 def seo_analyst_node(state: AgentState):
@@ -427,7 +492,7 @@ def seo_analyst_node(state: AgentState):
 
 def meta_data_node(state: AgentState):
     print("[Meta Data] Generating Metadata & Title...")
-    gpt4_turbo, gpt4o = get_llms()
+    gpt4_turbo, gpt5_1 = get_llms()
     draft = state["content_draft"]
 
     prompt = f"""
@@ -438,7 +503,7 @@ def meta_data_node(state: AgentState):
 
     Blog start: {draft[:1000]}
     """
-    response = gpt4o.invoke([HumanMessage(content=prompt)])
+    response = gpt5_1.invoke([HumanMessage(content=prompt)])
 
     try:
         clean_json = response.content.replace("```json", "").replace("```", "")
@@ -461,7 +526,7 @@ def meta_data_node(state: AgentState):
 
 def visual_node(state: AgentState):
     print("[Visuals] Generating concept...")
-    gpt4_turbo, gpt4o = get_llms()
+    gpt4_turbo, gpt5_1 = get_llms()
 
     image_prompt_system = """You are an expert Art Director creating images for tech articles.
     Your goal is to create a HIGHLY SPECIFIC prompt for DALL-E 3.
@@ -491,7 +556,7 @@ def visual_node(state: AgentState):
     Be concrete and specific, not abstract or generic:
     """
 
-    image_prompt_generator = gpt4o.invoke([
+    image_prompt_generator = gpt5_1.invoke([
         SystemMessage(content=image_prompt_system),
         HumanMessage(content=prompt_request)
     ])
@@ -632,8 +697,12 @@ def run_cli_mode():
 
     final_state = app_graph.invoke(initial_state)
 
-    if final_state.get('image_path'):
+    # Optional: skip upload locally when DISABLE_UPLOAD is set
+    disable_upload = os.getenv("DISABLE_UPLOAD", "").lower() in ("1", "true", "yes")
+    if final_state.get('image_path') and not disable_upload:
         asyncio.run(upload_to_coder_design(final_state))
+    elif disable_upload:
+        print("[Upload] Skipped (DISABLE_UPLOAD is set).")
 
 
 def run_streamlit_mode():
