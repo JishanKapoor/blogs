@@ -148,8 +148,24 @@ def trend_spotter_node(state: AgentState):
 
 def researcher_node(state: AgentState):
     print(f"[Researcher] Investigating: {state['topic']}")
-    data = perform_web_search(f"{state['topic']} detailed technical analysis news")
-    return {"research_data": data, "iteration_count": 0}
+    
+    # Multiple searches for diverse sources
+    queries = [
+        f"{state['topic']} technical analysis implementation",
+        f"{state['topic']} GitHub repository examples",
+        f"{state['topic']} official documentation",
+        f"{state['topic']} business impact ROI case study",
+        f"{state['topic']} best practices industry standards"
+    ]
+    
+    all_data = []
+    for query in queries:
+        data = perform_web_search(query)
+        if data:
+            all_data.append(data)
+    
+    combined_data = "\n\n--- NEW SEARCH ---\n\n".join(all_data)
+    return {"research_data": combined_data, "iteration_count": 0}
 
 
 def writer_node(state: AgentState):
@@ -162,7 +178,15 @@ def writer_node(state: AgentState):
 
     system = """You are a Senior Tech Columnist for Coder Design.
 
-    CORE OBJECTIVE: Write an engaging deep-dive (1200-1500 words).
+    CORE OBJECTIVE: Write an engaging deep-dive (1200-1500 words) that combines TECHNICAL depth with BUSINESS insights.
+
+    CONTENT STRATEGY:
+    - Balance technical implementation details (40%) with business impact and strategy (30%)
+    - Include real-world examples, case studies, and industry applications
+    - Discuss ROI, cost implications, market trends, and competitive advantages
+    - Cover both developer perspective AND business stakeholder viewpoint
+    - Vary your writing style: mix tutorials, analysis, opinion, and storytelling
+    - Use different angles: sometimes controversial, sometimes educational, sometimes forward-looking
 
     CRITICAL FORMATTING RULES (STRICT):
     1. **USE BULLET POINTS** for lists.
@@ -171,12 +195,16 @@ def writer_node(state: AgentState):
     4. **SHORT PARAGRAPHS**: Maximum 3 sentences per paragraph.
     5. **Bold** important concepts in normal paragraphs (not bullets).
 
-    MANDATORY EXTERNAL LINKS:
-    - Include at least 4-6 external links from the RESEARCH DATA.
+    MANDATORY EXTERNAL LINKS (CRITICAL):
+    - Include at least 8-12 high-quality external links from DIVERSE sources
+    - MUST include links from: GitHub repos, official documentation, Medium articles, Dev.to posts, Hacker News discussions, tech company blogs (Google, Microsoft, Amazon, etc.), academic papers, industry reports
+    - DO NOT rely only on Stack Overflow
+    - Vary your sources: use authoritative tech blogs, open-source projects, conference talks, benchmarks
     - Format: `[Link Text](URL)`
+    - Extract URLs from the RESEARCH DATA provided
 
     MANDATORY CODER DESIGN LINKS:
-    Naturally weave in these services:
+    Naturally weave in these services (use 2-3 per article):
     - Mobile Development: https://www.coderdesign.com/mobile-app-development
     - Full Stack: https://www.coderdesign.com/full-stack-engineering
     - AI Workflow: https://www.coderdesign.com/ai-workflow
@@ -188,8 +216,14 @@ def writer_node(state: AgentState):
     TOPIC: {topic}
     CUSTOM INSTRUCTIONS: {instructions}
 
-    RESEARCH DATA (CONTAINS URLs - USE THEM):
+    RESEARCH DATA (CONTAINS DIVERSE URLs - USE THEM ALL):
     {state['research_data']}
+    
+    IMPORTANT: Make this piece unique by varying:
+    - Tone: Choose from authoritative, conversational, analytical, or provocative
+    - Structure: Mix how-to guides, opinion pieces, trend analysis, or comparison articles
+    - Technical vs Business balance: Adjust based on topic relevance
+    - Include practical code examples, architecture diagrams (described), or business metrics where relevant
     """
 
     if feedback and feedback != "APPROVED":
@@ -209,12 +243,12 @@ def seo_analyst_node(state: AgentState):
         return {"critique_feedback": f"Draft is too short ({word_count} words). EXPAND to 1200-1500 words."}
 
     links_found = re.findall(r'\[.*?\]\(http.*?\)', draft)
-    if len(links_found) < 3:
-        return {"critique_feedback": "CRITICAL: Add at least 3-5 external hyperlinks [text](url)."}
+    if len(links_found) < 8:
+        return {"critique_feedback": f"CRITICAL: Only {len(links_found)} links found. Add at least 8-12 external hyperlinks from DIVERSE sources (GitHub, official docs, tech blogs, NOT just Stack Overflow)."}
 
     audit = gpt4_turbo.invoke([
         SystemMessage(
-            content="Audit for: 1. **Bullet Points must NOT contain bold text.** (Reject if you see '**' inside a bullet). 2. Frequent H3 Headers. 3. Internal Coder Design Links. 4. FAQ Section. If Good, say 'APPROVED'."),
+            content="Audit for: 1. **Bullet Points must NOT contain bold text.** (Reject if you see '**' inside a bullet). 2. Frequent H3 Headers. 3. Internal Coder Design Links. 4. DIVERSE external sources (GitHub, official docs, tech blogs, Medium, Dev.to - NOT just Stack Overflow). 5. Balance of technical AND business insights. If Good, say 'APPROVED'."),
         HumanMessage(content=draft)
     ])
 
