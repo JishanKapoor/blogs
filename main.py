@@ -227,18 +227,27 @@ def writer_node(state: AgentState):
     - High perplexity (varied structures) and burstiness (mix of short/long sentences)
 
     CRITICAL FORMATTING RULES:
-    1. **BULLET POINTS - ABSOLUTE RULE**: 
-       - ZERO bold text (`**text**` or `<strong>text</strong>`) inside bullets
-       - NO colons after bold headings in bullets
-       - Format must be: `- Simple plain text` or `<li>Simple plain text</li>`
-       - NEVER: `- **Bold heading**: explanation` or `<li><strong>Bold</strong>: text</li>`
-       - Example CORRECT: `<li>Clean, minimal design</li>` or `- Use AI to enhance creativity`
-       - Example WRONG: `<li><strong>Embrace AI</strong>: Use it wisely</li>` or `- **Key point**: Details here`
-       - Plain text only, no formatting within bullets
+    1. **BULLET POINTS - ABSOLUTE ZERO TOLERANCE RULE**: 
+       - ABSOLUTELY NO formatting tags of any kind inside bullets
+       - NO `**bold**` markdown
+       - NO `<strong>text</strong>` HTML tags
+       - NO `<b>text</b>` HTML tags
+       - NO colons after headings in bullets like "Title: explanation"
+       
+       FORMAT MUST BE EXACTLY:
+       ✓ CORRECT: `<li>Freedom from Commission with no more 30% cuts and competitive pricing</li>`
+       ✓ CORRECT: `- Developers can price their apps more competitively without commission fees`
+       
+       ✗ WRONG: `<li><strong>Freedom from Commission</strong>: No more 30% cuts</li>`
+       ✗ WRONG: `- **Key Point**: Explanation here`
+       
+       REWRITE bullet content as a single plain sentence without any bold titles or separators.
+       If you need to emphasize something, put it in a regular paragraph BEFORE the bullets.
+       
     2. **NO EXTRA SPACING** in bullet points - keep them tight
     3. **H3 HEADERS**: Use them every 150-200 words, make them conversational
     4. **SHORT PARAGRAPHS**: Maximum 3-4 sentences usually
-    5. **Bold** important concepts in regular paragraphs (NOT in bullets)
+    5. **Bold** important concepts in regular paragraphs ONLY (NEVER in bullets)
 
     EXTERNAL LINKS (2-3 ONLY):
     - NO GitHub links
@@ -291,13 +300,19 @@ def writer_node(state: AgentState):
     6. Mix sentence lengths dramatically for burstiness
     7. Add subtle emotional cues and rhetorical questions
     8. Include real company names, specific numbers, concrete examples
-    9. CRITICAL BULLET RULE: Bullets must be plain text ONLY. Format: `<li>Plain text here</li>` or `- Plain text here`
-    10. NEVER use bold/strong tags or markdown inside bullets: NO `<li><strong>Title</strong>: text</li>` or `- **Bold**: text`
-    11. Avoid all forbidden AI-sounding words and phrases listed above
-    12. End with relatable, actionable conclusion
+    9. CRITICAL BULLET RULE - ZERO TOLERANCE: 
+       - Bullets = plain sentences ONLY
+       - NO `<strong>`, NO `<b>`, NO `**markdown**` inside any bullet
+       - NO "Title: explanation" pattern
+       - Rewrite as complete plain sentences
+       - Example: Instead of "<li><strong>Freedom from Commission</strong>: No more 30% cuts</li>"
+       - Write: "<li>Developers enjoy freedom from commission with no more 30% platform cuts</li>"
+    10. Avoid all forbidden AI-sounding words and phrases listed above
+    11. End with relatable, actionable conclusion
     
     Write as if you're explaining this to a friend who's genuinely curious. Be opinionated. Share insights. Make it memorable.
-    Keep bullets SIMPLE and CLEAN - just plain text, nothing fancy.
+    
+    REMEMBER: Bullets are simple sentences. No titles. No bold. No colons separating parts. Just plain, readable text.
     """
 
     if feedback and feedback != "APPROVED":
@@ -327,27 +342,45 @@ def seo_analyst_node(state: AgentState):
         if any(forbidden in link_lower for forbidden in forbidden_sources):
             return {"critique_feedback": f"CRITICAL: Found forbidden link source (GitHub/Stack Overflow). Replace with official documentation or tech company blogs."}
     
-    # CRITICAL: Check for bold text in bullet points
+    # CRITICAL: Check for ANY bold/strong formatting in bullet points
     # Pattern 1: Markdown bullets with bold: - **text** or - **text**: 
     markdown_bold_bullets = re.findall(r'[-*]\s+\*\*[^*]+\*\*', draft)
     if markdown_bold_bullets:
-        return {"critique_feedback": f"CRITICAL BULLET VIOLATION: Found bold text in bullet points (markdown format). Bullets must be plain text only. Examples found: {markdown_bold_bullets[:2]}"}
+        return {"critique_feedback": f"CRITICAL BULLET VIOLATION: Found markdown bold in bullets. Remove ALL ** formatting. Bullets must be plain text only. Found: {markdown_bold_bullets[:3]}"}
     
-    # Pattern 2: HTML bullets with strong: <li><strong>text</strong>
-    html_bold_bullets = re.findall(r'<li>\s*<strong>[^<]+</strong>', draft)
+    # Pattern 2: HTML bullets with strong - ANY strong tag inside li
+    html_bold_bullets = re.findall(r'<li>.*?<strong>.*?</strong>.*?</li>', draft, re.DOTALL)
     if html_bold_bullets:
-        return {"critique_feedback": f"CRITICAL BULLET VIOLATION: Found <strong> tags in <li> bullets. Bullets must be plain text only. Examples: {html_bold_bullets[:2]}"}
+        examples = [ex[:100] + '...' if len(ex) > 100 else ex for ex in html_bold_bullets[:3]]
+        return {"critique_feedback": f"CRITICAL BULLET VIOLATION: Found <strong> tags inside <li> bullets. Remove ALL <strong></strong> tags from bullets. Examples: {examples}"}
+    
+    # Pattern 3: Check for <b> tags in bullets as well
+    html_b_bullets = re.findall(r'<li>.*?<b>.*?</b>.*?</li>', draft, re.DOTALL)
+    if html_b_bullets:
+        examples = [ex[:100] + '...' if len(ex) > 100 else ex for ex in html_b_bullets[:3]]
+        return {"critique_feedback": f"CRITICAL BULLET VIOLATION: Found <b> tags inside <li> bullets. Remove ALL <b></b> tags from bullets. Examples: {examples}"}
 
     audit = gpt4_turbo.invoke([
         SystemMessage(
-            content="""Audit this content with STRICT criteria:
-            1. **CRITICAL BULLET POINT CHECK**: Bullets must be 100% plain text. REJECT if you see:
-               - `**text**` inside bullets
-               - `<strong>text</strong>` inside bullets  
-               - Pattern like `- **Title**: explanation` or `<li><strong>Title</strong>: text</li>`
-               - ANY formatting inside bullet points
-               CORRECT format: `<li>Simple plain text</li>` or `- Simple plain text`
-               If ANY bullet has bold/strong tags or markdown, REJECT IMMEDIATELY.
+            content="""Audit this content with EXTREME STRICTNESS on bullet formatting:
+            
+            1. **CRITICAL BULLET POINT CHECK - ZERO TOLERANCE**: 
+               Bullets must be 100% PLAIN TEXT with NO formatting whatsoever.
+               
+               REJECT IMMEDIATELY if you see ANY of these patterns:
+               - `- **Title**: explanation` (markdown bold)
+               - `<li><strong>Title</strong>: explanation</li>` (HTML strong)
+               - `<li><b>Title</b>: explanation</li>` (HTML b tag)
+               - ANY bold, italic, or formatting inside bullet points
+               
+               ONLY ACCEPT this format:
+               - `<li>Simple plain text with no formatting at all</li>`
+               - `- Simple plain text with no formatting`
+               
+               Example CORRECT: `<li>Freedom from Commission with no more 30% cuts</li>`
+               Example WRONG: `<li><strong>Freedom from Commission</strong>: No more 30% cuts</li>`
+               
+               If you find even ONE bullet with ANY formatting tags, REJECT the entire draft.
             
             2. **CRITICAL**: Check for AI-sounding words (opt, dive, unlock, unleash, intricate, utilization, transformative, alignment, proactive, scalable, benchmark). If found, REJECT.
             3. **CRITICAL**: Check for AI phrases ("in this world", "in today's world", "at the end of the day", "best practices", "dive into"). If found, REJECT.
@@ -361,7 +394,7 @@ def seo_analyst_node(state: AgentState):
             11. Real examples with specific companies/numbers
             12. Avoids overly polished, robotic language
             
-            If ALL criteria pass, say 'APPROVED'. Otherwise, list specific issues to fix."""),
+            If ALL criteria pass, say 'APPROVED'. Otherwise, list EVERY issue found."""),
         HumanMessage(content=draft)
     ])
 
@@ -369,7 +402,7 @@ def seo_analyst_node(state: AgentState):
         print("[SEO Analyst] Approved.")
         return {"critique_feedback": "APPROVED"}
 
-    print(f"[SEO Analyst] Rejection: {audit.content[:100]}...")
+    print(f"[SEO Analyst] Rejection: {audit.content[:200]}...")
     return {"critique_feedback": audit.content}
 
 
