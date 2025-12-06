@@ -1,14 +1,12 @@
 openai==1.54.0
 playwright==1.48.0
 python-dotenv==1.0.1
-# duckduckgo-search removed (unused in code)
-
-# LangChain Compatibility 
-# (langchain-openai 0.2.x works with core 0.3.x)
 langchain-openai==0.2.10
 langchain-core==0.3.21
 langgraph==0.2.45
 streamlit==1.39.0
-
-# Add this to handle async loops in Streamlit comfortably
 nest-asyncio==1.6.0
+
+# --- THE FIX ---
+# Pin httpx to 0.27.2 to prevent the "proxies" error
+httpx==0.27.2
