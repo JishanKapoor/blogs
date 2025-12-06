@@ -259,47 +259,56 @@ workflow.add_edge("visuals", END)
 app_graph = workflow.compile()
 
 # --- 5. UPLOADER (FIXED) ---
+# --- 5. UPLOADER (FINAL FIX) ---
 async def upload_to_coder_design(data, status_callback=None):
     logger.info("[Upload] Launching Browser...")
     
     async with async_playwright() as p:
-        # Launch with a specific viewport to ensure elements aren't hidden
-        browser = await p.chromium.launch(headless=True)
-        context = await browser.new_context(viewport={'width': 1280, 'height': 720})
+        browser = await p.chromium.launch(
+            headless=True,
+            args=['--no-sandbox', '--disable-setuid-sandbox']
+        )
+        context = await browser.new_context(viewport={'width': 1280, 'height': 800})
         page = await context.new_page()
 
         try:
             logger.info("[Upload] Logging in...")
             await page.goto(LOGIN_URL, timeout=60000)
             
-            # Login Process
-            await page.get_by_placeholder("Enter admin password").fill(PASSWORD)
+            # 1. Fill Password (USING YOUR HARDCODED PASSWORD TO BE SAFE)
+            # Your HTML: <input placeholder="Enter admin password">
+            await page.get_by_placeholder("Enter admin password").fill("jishan1010")
+            
+            # 2. Click Login
             await page.get_by_role("button", name="Access Admin Panel").click()
             
-            # --- STABILITY FIX: Wait for Login to actually complete ---
-            # Wait for URL to change OR a known element on the admin page to appear
-            # We wait up to 10 seconds to confirm we left the login page
-            logger.info("   Waiting for login redirect...")
-            await page.wait_for_load_state("networkidle")
-            
-            # Force navigation to Upload Page to be safe
+            # 3. CRITICAL WAIT: Wait for the URL to change to the admin dashboard
+            # This confirms the cookie is set.
+            logger.info("   Waiting for login to complete...")
+            try:
+                # Wait up to 10s for URL to contain 'manage-blogs'
+                await page.wait_for_url("**/manage-blogs", timeout=10000)
+            except:
+                logger.warning("   URL didn't change to manage-blogs, but continuing to check...")
+
+            # 4. NOW Navigate to Upload Page
             logger.info(f"[Upload] Navigating to {TARGET_URL}...")
             await page.goto(TARGET_URL, timeout=60000)
             
-            # --- STABILITY FIX: Confirm we are on the upload page ---
-            # If we were redirected back to login, this check will save us from the confusing timeout error
-            if "manage-blogs" in page.url:
-                logger.error("   Failed to access Upload page. Redirected back to Login. Check PASSWORD.")
-                raise Exception("Login Failed - Redirected to Login Page")
+            # 5. VERIFY: Are we actually on the upload page?
+            # If we see the "Access Admin Panel" button, login failed.
+            if await page.get_by_role("button", name="Access Admin Panel").is_visible():
+                logger.error("   LOGIN FAILED: Redirected back to login screen.")
+                raise Exception("Login Failed - Password might be wrong or session not set.")
+
+            # Wait for the Title Input (this confirms we are really on the upload form)
+            await page.locator('input[placeholder="Enter blog title"]').wait_for(state="attached", timeout=15000)
 
             logger.info("[Upload] Filling Form...")
             
-            # File Upload - Wait specifically for it
-            file_input = page.locator('input[type="file"]')
-            await file_input.wait_for(state="attached", timeout=10000) # Wait for input to exist
-            
+            # File Upload
             if data['image_path'] and os.path.exists(data['image_path']):
-                await file_input.set_input_files(data['image_path'])
+                await page.locator('input[type="file"]').set_input_files(data['image_path'])
 
             # Title
             title_to_use = data.get('final_title', data['topic'])
@@ -309,7 +318,7 @@ async def upload_to_coder_design(data, status_callback=None):
             await page.get_by_placeholder("Enter author name").fill("Sarah Miller")
             await page.keyboard.press("Enter")
 
-            # Category (Try/Except for robustness)
+            # Category
             try:
                 await page.locator("select").select_option(label=data['final_category'])
             except:
@@ -329,15 +338,17 @@ async def upload_to_coder_design(data, status_callback=None):
 
             logger.info("[Upload] Submitting...")
             submit_btn = page.get_by_role("button", name="Upload Blog Post")
+            await submit_btn.scroll_into_view_if_needed()
             await submit_btn.click()
             
+            # Wait for success
             await page.wait_for_timeout(5000)
             logger.info("[Success] Blog Uploaded!")
 
         except Exception as e:
             logger.error(f"[Error] Upload Failed: {e}")
             await page.screenshot(path="error_debug.png")
-            raise e # Reraise to turn GitHub Red
+            raise e
 
         finally:
             await browser.close()
