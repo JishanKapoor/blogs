@@ -16,15 +16,15 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    # --- THE FIX IS HERE: Explicitly use '3.11' ---
+    # Fix: Use Python 3.11 (Stable) to avoid compilation errors
     - name: Set up Python
       uses: actions/setup-python@v5
       with:
-        python-version: '3.11' 
-        cache: 'pip' # This speeds up future runs
+        python-version: '3.11'
+        cache: 'pip'
 
-    - name: Install system dependencies (Safety Net)
-      # Just in case compilation is forced, this adds the missing jpeg library
+    # Fix: Install system libraries just in case Pillow needs to compile
+    - name: Install system dependencies
       run: |
         sudo apt-get update
         sudo apt-get install -y libjpeg-dev zlib1g-dev
@@ -39,6 +39,6 @@ jobs:
       env:
         OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
-        # If you added other env vars to secrets, map them here
       run: |
-        python agent.py --topic "${{ github.event.inputs.topic }}"
+        # CHANGED: Now running main.py instead of agent.py
+        python main.py --topic "${{ github.event.inputs.topic }}"
