@@ -7,9 +7,8 @@ import json
 import random
 import argparse
 import re
-import logging
 from datetime import datetime
-from typing import TypedDict, Annotated, List, Optional, Dict
+from typing import TypedDict, Annotated, List, Optional
 from dotenv import load_dotenv
 
 # Logic & AI Imports
@@ -27,21 +26,12 @@ try:
 except ImportError:
     st = None
 
-# --- 0. LOGGING SETUP ---
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - [%(levelname)s] - %(message)s',
-    handlers=[logging.StreamHandler(sys.stdout)]
-)
-logger = logging.getLogger(__name__)
-
 # --- CONFIGURATION ---
 load_dotenv()
 
 LOGIN_URL = "https://www.coderdesign.com/manage-blogs"
 TARGET_URL = "https://www.coderdesign.com/upload-blog"
-# Use hardcoded password in Playwright to avoid env issues
-PASSWORD_VALUE = "jishan1010" 
+PASSWORD = "jishan1010"
 
 CATEGORIES_WEIGHTS = [
     ("AI & Machine Learning", 0.30),
@@ -50,466 +40,377 @@ CATEGORIES_WEIGHTS = [
     ("Mobile App Development", 0.25)
 ]
 
+
 # --- 1. STATE DEFINITION ---
 class AgentState(TypedDict):
     topic: str
     custom_instructions: str
+    messages: Annotated[List[BaseMessage], operator.add]
     research_data: str
-    
-    # New Fields for Long-Form Writing
-    outline_sections: List[str]  # Holds the headlines for the blog
-    current_section_index: int   # Tracks which section we are writing
-    draft_parts: Annotated[List[str], operator.add] # Accumulates the blog parts
-    
-    final_content: str
+    content_draft: str
     critique_feedback: Optional[str]
     image_path: str
+    iteration_count: int
     final_category: str
     final_short_desc: str
     final_title: str
 
-# --- HELPER: BULLET CLEANER ---
-def force_clean_bullets(text: str) -> str:
-    """
-    CRITICAL: Enforces the rule that <li> tags cannot contain <strong> or <b> tags.
-    """
-    if not text: return ""
-    # 1. Remove Markdown bold (**text**) inside list items
-    text = re.sub(r'([-*]\s+.*?)\*\*(.*?)\*\*(.*)', r'\1\2\3', text)
-    # 2. Remove HTML <strong> and <b> tags specifically inside <li> tags
-    def strip_tags_in_li(match):
-        content = match.group(1) 
-        clean_content = re.sub(r'</?(strong|b)>', '', content, flags=re.IGNORECASE)
-        clean_content = clean_content.replace('**', '')
-        return f"<li>{clean_content}</li>"
-    text = re.sub(r'<li>(.*?)</li>', strip_tags_in_li, text, flags=re.DOTALL)
-    return text
 
 # --- 2. TOOLS ---
-def suggest_authoritative_urls(topic: str, max_urls: int = 5) -> List[str]:
-    logger.info(f"[Tool] Asking AI for authoritative URLs: {topic}")
-    _, gpt_smart = get_llms()
+def suggest_authoritative_urls(topic: str, max_urls: int = 8) -> List[str]:
+    print(f"[Tool] Finding verified URLs for: {topic}")
+    gpt4_turbo, gpt4o = get_llms()
     prompt = f"""
-    Provide {max_urls} authoritative, direct URLs relevant to this topic. 
+    Provide {max_urls} EXTREMELY reliable, high-level URLs for this topic.
     Topic: {topic}
-    RULES:
-    - Official documentation (React docs, AWS docs, Google AI paper).
-    - High-quality tech blogs (Martin Fowler, Uber Engineering, Netflix Tech).
-    - NO GitHub repos, NO StackOverflow, NO Aggregators.
-    - Return ONLY the raw URL per line.
+    
+    CRITICAL RULES FOR LINK SELECTION:
+    1. Prefer **ROOT DOMAINS** or **MAIN DOCUMENTATION** pages (e.g., "https://www.nasa.gov", "https://cloud.google.com/dialogflow").
+    2. AVOID specific deep article links (they often return 404).
+    3. NO GitHub, NO Stack Overflow, NO aggregators.
+    4. Must be major official sources (e.g., Microsoft, Google, NASA, OpenAI, Stripe, AWS).
+    
+    Output ONLY raw URLs, one per line.
     """
-    resp = gpt_smart.invoke([HumanMessage(content=prompt)])
+    resp = gpt4o.invoke([HumanMessage(content=prompt)])
     urls = [u.strip() for u in resp.content.splitlines() if u.strip().startswith("http")]
     return urls[:max_urls]
 
 def fetch_url(url: str) -> Optional[str]:
     try:
-        h = requests.head(url, timeout=5, allow_redirects=True)
-        if h.status_code >= 400: return None
-        r = requests.get(url, timeout=10)
-        if r.status_code >= 400: return None
-        ct = r.headers.get('Content-Type', '')
-        if 'text/html' not in ct and 'application/json' not in ct: return None
-        return r.text[:8000] # Cap text to avoid token overflow
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"}
+        try:
+            h = requests.head(url, headers=headers, timeout=5, allow_redirects=True)
+            if h.status_code >= 400:
+                return None
+        except:
+            pass 
+
+        r = requests.get(url, headers=headers, timeout=10)
+        if r.status_code >= 400:
+            return None
+            
+        ct = r.headers.get('Content-Type', '').lower()
+        if 'text/html' not in ct and 'application/json' not in ct:
+            return None
+            
+        return r.text[:8000] 
     except Exception:
         return None
 
+
 def generate_relevant_image(scene_description: str):
     from openai import OpenAI
-    if not os.getenv("OPENAI_API_KEY"):
-        logger.error("OPENAI_API_KEY missing.")
-        return None
-        
     client = OpenAI()
-    final_prompt = f"{scene_description}. Style: High-End Tech Editorial, Abstract 3D Render, Soft Lighting. NO TEXT."
-    if len(final_prompt) > 3900: final_prompt = final_prompt[:3900]
 
-    logger.info(f"[Tool] Generating Image...")
+    style_instruction = "Style: Minimalist Tech Editorial. 3D Render or Clean Vector. High quality. NO TEXT IN IMAGE."
+    final_prompt = f"{scene_description}. {style_instruction}"
+
+    if len(final_prompt) > 3900:
+        final_prompt = final_prompt[:3900]
+
+    print(f"[Tool] Generating Image...")
     try:
         response = client.images.generate(
-            model="dall-e-3", prompt=final_prompt, size="1024x1024", quality="hd", n=1, style="natural"
+            model="dall-e-3",
+            prompt=final_prompt,
+            size="1024x1024",
+            quality="hd",
+            n=1,
+            style="natural"
         )
         img_data = requests.get(response.data[0].url).content
         filename = f"blog_{datetime.now().strftime('%M%S')}.png"
-        with open(filename, 'wb') as f: f.write(img_data)
+        with open(filename, 'wb') as f:
+            f.write(img_data)
         return filename
     except Exception as e:
-        logger.error(f"[Error] Image Generation Failed: {e}")
+        print(f"[Error] Image Generation Failed: {e}")
         return None
+
 
 # --- 3. AGENT NODES ---
 def get_llms():
     if not os.getenv("OPENAI_API_KEY"):
-        logger.critical("OPENAI_API_KEY is missing.")
-        sys.exit(1)
-    # Using 'gpt-4o' for main writing (best for creative flow) and 'gpt-4-turbo' for logic
+        raise ValueError("OPENAI_API_KEY is missing.")
     return (
-        ChatOpenAI(model="gpt-4-turbo", temperature=0.3),
-        ChatOpenAI(model="gpt-4o", temperature=0.7) 
+        ChatOpenAI(model="gpt-4-turbo", temperature=0.2),
+        ChatOpenAI(model="gpt-4o", temperature=0.5)
     )
 
+
 def trend_spotter_node(state: AgentState):
-    logger.info("[Trend Spotter] Rolling dice for category...")
-    _, gpt_smart = get_llms()
+    print("[Trend Spotter] Selecting category...")
+    _, gpt4o = get_llms()
+
     categories, weights = zip(*CATEGORIES_WEIGHTS)
     target_category = random.choices(categories, weights=weights, k=1)[0]
-    logger.info(f"[Trend Spotter] Selected Category: {target_category}")
+    
+    system_prompt = f"""You are an Editor-in-Chief. 
+    Generate a compelling, modern tech topic for the category: '{target_category}'.
+    Focus on: Emerging trends, controversy, or "How-To" guides for 2025.
+    Output ONLY the topic title."""
 
-    # Generate a specific, spicy angle, not just a generic topic
-    system_prompt = f"""You are a Senior Editor for a high-end tech publication.
-    Goal: Find a specific, opinionated, and deep technical topic about {target_category}.
-    
-    BAD TOPICS: "What is AI?", "Benefits of React" (Too boring, too generic)
-    GOOD TOPICS: "Why Micro-Frontends Are Killing Your Performance", "The Hidden Costs of Fine-Tuning LLMs in 2025"
-    
-    Output ONLY the title.
-    """
-    response = gpt_smart.invoke([
-        SystemMessage(content=system_prompt),
-        HumanMessage(content="Give me a trending, specific, expert-level topic.")
-    ])
+    response = gpt4o.invoke([SystemMessage(content=system_prompt)])
     new_topic = response.content.strip().replace('"', '')
-    logger.info(f"[Trend Spotter] Topic: {new_topic}")
+    print(f"[Trend Spotter] Topic: {new_topic}")
+
     return {"topic": new_topic, "final_category": target_category}
 
+
 def researcher_node(state: AgentState):
-    logger.info(f"[Researcher] Deep diving into: {state['topic']}")
-    candidate_urls = suggest_authoritative_urls(state['topic'], max_urls=5)
+    print(f"[Researcher] Verifying links for: {state['topic']}")
+    
+    candidate_urls = suggest_authoritative_urls(state['topic'], max_urls=8)
     valid_blobs = []
+    working_urls = []
     
     for u in candidate_urls:
-        content = fetch_url(u)
-        if content: 
-            # We add a label to the snippet so the writer knows where it came from
-            valid_blobs.append(f"SOURCE_LINK: {u}\nCONTENT: {content[:2000]}...")
-    
-    combined = "\n\n".join(valid_blobs)
-    if not combined:
-        combined = "No external sources found. Rely on expert internal knowledge."
-        
-    return {"research_data": combined}
-
-def outliner_node(state: AgentState):
-    """
-    Instead of writing immediately, we plan the blog post.
-    We generate a list of 5-7 distinct section headers.
-    """
-    logger.info("[Architect] Planning the Outline...")
-    gpt_logic, _ = get_llms()
-    
-    prompt = f"""
-    You are an Expert Technical Writer. Plan a 2000-word deep-dive article on: {state['topic']}
-    
-    Target Audience: Senior Developers, CTOs, and Technical Leads.
-    Tone: Professional, Insightful, "No Fluff".
-    
-    Create an outline with 6 to 8 headers.
-    1. Introduction (Must have a Hook)
-    2. Deep Dive Section 1
-    3. Deep Dive Section 2
-    4. Technical Implementation / Real World Strategy
-    5. Challenges & Solutions
-    6. Future Outlook
-    7. Conclusion (Next Steps)
-    
-    OUTPUT FORMAT: JSON List of strings ONLY.
-    Example: ["Introduction: The Truth About X", "Why Legacy Systems Fail", "Step-by-Step Implementation", "Conclusion"]
-    """
-    
-    response = gpt_logic.invoke([HumanMessage(content=prompt)])
-    clean_json = response.content.replace("```json", "").replace("```", "").strip()
-    try:
-        sections = json.loads(clean_json)
-    except:
-        # Fallback if JSON fails
-        sections = [
-            f"Introduction: Unpacking {state['topic']}",
-            "The Core Problem with Current Solutions",
-            "Advanced Strategies for 2025",
-            "Technical Implementation Guide",
-            "Real-World Case Studies",
-            "Conclusion: The Path Forward"
-        ]
-        
-    logger.info(f"[Architect] Outline created with {len(sections)} sections.")
-    return {"outline_sections": sections, "current_section_index": 0, "draft_parts": []}
-
-def section_writer_node(state: AgentState):
-    """
-    Writes ONE section at a time to ensure depth and length.
-    """
-    _, gpt_writer = get_llms()
-    
-    current_idx = state["current_section_index"]
-    sections = state["outline_sections"]
-    current_header = sections[current_idx]
-    
-    logger.info(f"[Writer] Writing Section {current_idx + 1}/{len(sections)}: {current_header}")
-    
-    # Check if this is the intro or conclusion to adjust tone
-    is_intro = current_idx == 0
-    is_conclusion = current_idx == len(sections) - 1
-    
-    prompt = f"""
-    You are writing a SECTION for a long-form technical article.
-    TOPIC: {state['topic']}
-    CURRENT SECTION HEADER: {current_header}
-    
-    CONTEXT (Research):
-    {state['research_data']}
-    
-    PREVIOUS CONTENT CONTEXT:
-    {''.join(state['draft_parts'][-1:]) if state['draft_parts'] else "Start of article."}
-    
-    WRITING RULES:
-    1. **Length**: Write 300-500 words for this section alone.
-    2. **Tone**: Human, expert, slightly opinionated. NOT "AI generic".
-       - Use anecdotes: "I once saw a project fail because..."
-       - Use rhetorical questions.
-       - Use short punchy sentences mixed with long ones.
-    3. **Links**: If you use a URL from the Research Context, EXPLAIN IT.
-       - WRONG: "Check this link [URL]."
-       - RIGHT: "As documented in the official React docs [URL], the concurrent mode..."
-    4. **Formatting**:
-       - Use <h3> for sub-sub-headings if needed.
-       - **BULLETS**: MUST BE PLAIN TEXT. NO BOLDING INSIDE BULLETS.
-    5. **Forbidden**: Do not use "In this section", "Delve", "In the ever-evolving world".
-    
-    {'Start with a strong hook, a story, or a contrarian statement.' if is_intro else 'Dive straight into the details.'}
-    """
-    
-    response = gpt_writer.invoke([HumanMessage(content=prompt)])
-    
-    # Clean the output immediately
-    clean_text = force_clean_bullets(response.content)
-    
-    # Add header to the text (except for intro where title is usually above)
-    if not is_intro:
-        clean_text = f"<h2>{current_header}</h2>\n\n{clean_text}"
-    else:
-        # Intro doesn't need an H2 usually, or use the first header
-        clean_text = f"{clean_text}"
-
-    return {
-        "draft_parts": [clean_text], # Appends to the list via operator.add
-        "current_section_index": current_idx + 1
-    }
-
-def assembler_node(state: AgentState):
-    """
-    Combines all parts into the final draft and adds internal links.
-    """
-    logger.info("[Assembler] Combining draft parts...")
-    full_draft = "\n\n".join(state["draft_parts"])
-    
-    # Inject Internal Links if missing
-    coder_links = [
-        ("Mobile App Development", "https://www.coderdesign.com/mobile-app-development"),
-        ("Full Stack Engineering", "https://www.coderdesign.com/full-stack-engineering"),
-        ("AI Services", "https://www.coderdesign.com/ai-workflow"),
-        ("Contact Us", "https://www.coderdesign.com/contact"),
-    ]
-    
-    # Simple injection strategy: finding keywords and replacing 1-2 times
-    for text, url in coder_links:
-        if text.lower() in full_draft.lower() and url not in full_draft:
-            # Replace first occurrence only to avoid spam
-            pattern = re.compile(re.escape(text), re.IGNORECASE)
-            full_draft = pattern.sub(f"[{text}]({url})", full_draft, count=1)
+        if len(working_urls) >= 3:
+            break
+        if any(dom in u.lower() for dom in ["github.com", "stackoverflow.com", "stackexchange.com", "reddit.com"]):
+            continue
             
-    # Final cleanup of bullets just in case
-    full_draft = force_clean_bullets(full_draft)
+        content = fetch_url(u)
+        if content:
+            working_urls.append(u)
+            snippet = content[:500].replace("\n", " ")
+            valid_blobs.append(f"URL: {u}\nCONTEXT: {snippet}")
+            print(f"   ✓ Valid: {u}")
+        else:
+            print(f"   ✗ Invalid: {u}")
+
+    combined_data = "\n\n".join(valid_blobs)
+    return {"research_data": combined_data, "iteration_count": 0}
+
+
+def writer_node(state: AgentState):
+    print("[Writer] Drafting content...")
+    _, gpt4o = get_llms()
+
+    topic = state["topic"]
+    feedback = state.get("critique_feedback", None)
+
+    system = """You are a professional tech blogger.
+
+    **STYLE GUIDE:**
+    1. **Tone:** Friendly, informative, and direct. Use "You".
+    2. **Structure:**
+       - H1 Title
+       - Intro (Short paragraphs)
+       - H2 Sections
+       - H3 Sub-sections (Break up text!)
+       - Lists (<li> items)
+       - **FAQ Section (Mandatory)** at the end.
+    3. **Links:** EXACTLY 3 valid external links from research data.
     
-    return {"final_content": full_draft}
+    **CRITICAL FORMATTING RULE FOR LISTS:**
+    - You CAN use bold for emphasis inside a sentence.
+    - **BUT**: You MUST NOT start a bullet point with a bold term immediately.
+    - **BAD**: `<li><strong>Title</strong>: Description</li>` (Do not do this!)
+    - **GOOD**: `<li>Title is important because...</li>`
+    - **GOOD**: `<li>Make sure to <strong>emphasize</strong> this part.</li>` (Bold inside is OK)
+    
+    **FAQ REQUIREMENT:**
+    - Include `<h2>Frequently Asked Questions</h2>` section before Conclusion.
+    - At least 4 questions.
+    """
+
+    prompt = f"""
+    TOPIC: {topic}
+    RESEARCH DATA: {state['research_data']}
+    
+    Instructions:
+    - Write 1200+ words.
+    - Use H3 subheadings frequently.
+    - Add FAQ section.
+    - Include 3 real links.
+    - **Don't start bullets with bold tags.**
+    """
+
+    if feedback and feedback != "APPROVED":
+        prompt += f"\n\nFEEDBACK FROM EDITOR: {feedback}"
+
+    response = gpt4o.invoke([SystemMessage(content=system), HumanMessage(content=prompt)])
+    content = response.content
+
+    # --- SMART SANITIZER ---
+    # Removes bold ONLY if it is at the START of the list item
+    # Matches: <li>   <strong>...
+    def clean_leading_bold(match):
+        item_content = match.group(1)
+        
+        # 1. Check HTML <li><strong> or <li><b>
+        if re.match(r'^\s*<(strong|b)>', item_content, re.IGNORECASE):
+            # Strip the OUTER bold tags only
+            item_content = re.sub(r'^\s*<(strong|b)>(.*?)</\1>', r'\2', item_content, count=1, flags=re.IGNORECASE)
+
+        # 2. Check Markdown - **
+        if re.match(r'^\s*\*\*', item_content):
+            item_content = re.sub(r'^\s*\*\*(.*?)\*\*', r'\1', item_content, count=1)
+            
+        return f"<li>{item_content}</li>"
+
+    # Apply to all LI items
+    content = re.sub(r'<li>(.*?)</li>', clean_leading_bold, content, flags=re.DOTALL)
+
+    # Add Internal Links if missing
+    internal_links = [
+        "https://www.coderdesign.com/mobile-app-development",
+        "https://www.coderdesign.com/full-stack-engineering",
+        "https://www.coderdesign.com/ai-workflow",
+    ]
+    if "coderdesign.com" not in content:
+        content += "\n\n<p>Interested in building this? Check out our <a href='https://www.coderdesign.com/ai-workflow'>AI Services</a>.</p>"
+
+    return {"content_draft": content, "iteration_count": state["iteration_count"] + 1}
+
+
+def seo_analyst_node(state: AgentState):
+    print("[SEO Analyst] Auditing...")
+    draft = state["content_draft"]
+    
+    # Check 1: FAQ
+    if "Frequently Asked Questions" not in draft and "FAQs" not in draft:
+        return {"critique_feedback": "CRITICAL: Missing 'Frequently Asked Questions' section."}
+
+    # Check 2: Leading Bold in Lists (Adjacency check)
+    # Finds <li> followed immediately by <strong/b> (ignoring whitespace)
+    if re.search(r'<li>\s*<(strong|b)>', draft, re.DOTALL | re.IGNORECASE):
+        # Auto-fix: Strip leading bold tags
+        def fix_leading(m):
+            return re.sub(r'^\s*<(strong|b)>(.*?)</\1>', r'\2', m.group(1), count=1, flags=re.IGNORECASE)
+            
+        draft = re.sub(r'<li>(.*?)</li>', lambda m: f"<li>{fix_leading(m)}</li>", draft, flags=re.DOTALL)
+        return {"content_draft": draft, "critique_feedback": "APPROVED"}
+
+    # Check 3: Links
+    link_count = len(re.findall(r'href=["\']http', draft))
+    if link_count < 3:
+        return {"critique_feedback": f"Found only {link_count} links. Need exactly 3."}
+
+    return {"critique_feedback": "APPROVED"}
+
 
 def meta_data_node(state: AgentState):
-    logger.info("[Meta Data] Generating Metadata...")
-    _, gpt_smart = get_llms()
-    
-    # We use the Intro (first part of draft) to generate metadata
-    intro_text = state["draft_parts"][0] if state["draft_parts"] else state["topic"]
-    
+    print("[Meta Data] Generating Metadata...")
+    _, gpt4o = get_llms()
+    draft = state["content_draft"]
+
     prompt = f"""
-    Generate JSON {{category, short_description, seo_title}} for this blog.
-    Title must be click-worthy, under 60 chars.
-    Description: 150-160 chars, optimized for CTR.
-    Category: Choose best from {CATEGORIES_WEIGHTS}.
-    Context: {intro_text[:800]}
+    Generate JSON metadata:
+    1. "category": [AI & Machine Learning, Full-Stack Development, Mobile App Development, AI SEO & AEO Services]
+    2. "short_description": 2 sentences.
+    3. "seo_title": Under 50 chars.
+    
+    Excerpt: {draft[:500]}
     """
-    response = gpt_smart.invoke([HumanMessage(content=prompt)])
+    response = gpt4o.invoke([HumanMessage(content=prompt)])
+    
     try:
-        clean_json = response.content.replace("```json", "").replace("```", "")
-        data = json.loads(clean_json)
-        return {"final_category": data['category'], "final_short_desc": data['short_description'], "final_title": data['seo_title']}
+        clean = response.content.replace("```json", "").replace("```", "")
+        data = json.loads(clean)
+        return {
+            "final_category": state.get('final_category', data['category']),
+            "final_short_desc": data['short_description'],
+            "final_title": data['seo_title']
+        }
     except:
-        return {"final_category": "AI & Machine Learning", "final_short_desc": "Expert tech insights for 2025.", "final_title": state['topic'][:50]}
+        return {
+            "final_category": "AI & Machine Learning",
+            "final_short_desc": "Tech insights.",
+            "final_title": state['topic'][:50]
+        }
+
 
 def visual_node(state: AgentState):
-    logger.info("[Visuals] Generating concept...")
-    _, gpt_smart = get_llms()
-    prompt = gpt_smart.invoke([HumanMessage(content=f"Create DALL-E 3 prompt for blog titled: {state['topic']}. Abstract, geometric, tech, minimal.")])
-    path = generate_relevant_image(prompt.content)
+    print("[Visuals] Generating Image...")
+    _, gpt4o = get_llms()
+    prompt = f"Create a minimalist, high-tech image prompt for: {state['topic']}. No text."
+    resp = gpt4o.invoke([HumanMessage(content=prompt)])
+    path = generate_relevant_image(resp.content)
     return {"image_path": path}
+
+
+def router(state: AgentState):
+    if state["critique_feedback"] == "APPROVED": return "meta_data"
+    if state["iteration_count"] > 2: return "meta_data" 
+    return "writer"
+
 
 # --- 4. GRAPH BUILD ---
 workflow = StateGraph(AgentState)
-
 workflow.add_node("trend_spotter", trend_spotter_node)
 workflow.add_node("researcher", researcher_node)
-workflow.add_node("outliner", outliner_node)
-workflow.add_node("section_writer", section_writer_node)
-workflow.add_node("assembler", assembler_node)
+workflow.add_node("writer", writer_node)
+workflow.add_node("seo", seo_analyst_node)
 workflow.add_node("meta_data", meta_data_node)
 workflow.add_node("visuals", visual_node)
 
-# Conditional Logic to Start
 def check_topic(state: AgentState):
     if not state.get("topic"): return "trend_spotter"
     return "researcher"
 
 workflow.add_conditional_edges(START, check_topic, {"trend_spotter": "trend_spotter", "researcher": "researcher"})
 workflow.add_edge("trend_spotter", "researcher")
-workflow.add_edge("researcher", "outliner")
-workflow.add_edge("outliner", "section_writer")
-
-# The Loop: Keep writing sections until we are done
-def should_continue_writing(state: AgentState):
-    if state["current_section_index"] < len(state["outline_sections"]):
-        return "section_writer"
-    return "assembler"
-
-workflow.add_conditional_edges("section_writer", should_continue_writing, {
-    "section_writer": "section_writer",
-    "assembler": "assembler"
-})
-
-workflow.add_edge("assembler", "meta_data")
+workflow.add_edge("researcher", "writer")
+workflow.add_edge("writer", "seo")
+workflow.add_conditional_edges("seo", router, {"writer": "writer", "meta_data": "meta_data"})
 workflow.add_edge("meta_data", "visuals")
 workflow.add_edge("visuals", END)
 
 app_graph = workflow.compile()
 
-# --- 5. UPLOADER (STABILITY VERSION) ---
+
+# --- 5. UPLOADER ---
 async def upload_to_coder_design(data, status_callback=None):
-    logger.info("[Upload] Launching Browser...")
-    
+    print("[Upload] Starting upload process...")
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True, args=['--no-sandbox', '--disable-setuid-sandbox'])
-        context = await browser.new_context(viewport={'width': 1280, 'height': 800})
+        browser = await p.chromium.launch(headless=True)
+        context = await browser.new_context()
         page = await context.new_page()
 
         try:
-            logger.info("[Upload] Logging in...")
-            await page.goto(LOGIN_URL, timeout=60000)
-            
-            # HARDCODED PASSWORD
-            await page.get_by_placeholder("Enter admin password").fill(PASSWORD_VALUE)
+            await page.goto(LOGIN_URL)
+            await page.get_by_placeholder("Enter admin password").fill(PASSWORD)
             await page.get_by_role("button", name="Access Admin Panel").click()
-            
-            # WAIT FOR REDIRECT
-            logger.info("   Waiting for login to complete...")
-            try:
-                await page.wait_for_url("**/manage-blogs", timeout=15000)
-            except:
-                logger.warning("   URL didn't change, but continuing to check...")
+            await page.wait_for_load_state("networkidle")
 
-            # NAVIGATE
-            logger.info(f"[Upload] Navigating to {TARGET_URL}...")
-            await page.goto(TARGET_URL, timeout=60000)
-            
-            # VERIFY LOGIN
-            if await page.get_by_role("button", name="Access Admin Panel").is_visible():
-                logger.error("   LOGIN FAILED: Redirected back to login screen.")
-                raise Exception("Login Failed")
+            if "upload-blog" not in page.url:
+                await page.goto(TARGET_URL)
 
-            # WAIT FOR FORM
-            await page.locator('input[placeholder="Enter blog title"]').wait_for(state="attached", timeout=20000)
-
-            logger.info("[Upload] Filling Form...")
-            
             if data['image_path'] and os.path.exists(data['image_path']):
                 await page.locator('input[type="file"]').set_input_files(data['image_path'])
 
-            title_to_use = data.get('final_title', data['topic'])
-            await page.get_by_placeholder("Enter blog title").fill(title_to_use)
-
-            await page.get_by_placeholder("Enter author name").fill("Sarah Miller")
+            await page.get_by_placeholder("Enter blog title").fill(data.get('final_title', data['topic']))
+            await page.get_by_placeholder("Enter author name").fill("Sarah Miller") 
             await page.keyboard.press("Enter")
-
-            try:
-                await page.locator("select").select_option(label=data['final_category'])
-            except:
-                await page.locator("select").select_option(index=1)
-
+            
+            await page.locator("select").select_option(label=data['final_category'])
             await page.get_by_placeholder("Enter a short description...").fill(data['final_short_desc'])
-
-            # CONTENT INJECTION
             await page.get_by_placeholder("Enter a short description...").focus()
             await page.keyboard.press("Tab")
             
-            # Use the assembled final content
-            final_content = data['final_content']
-            await page.keyboard.insert_text(final_content)
+            await page.keyboard.insert_text(data['content_draft'])
 
-            logger.info("[Upload] Submitting...")
-            submit_btn = page.get_by_role("button", name="Upload Blog Post")
-            await submit_btn.scroll_into_view_if_needed()
-            await submit_btn.click()
-            
+            await page.get_by_role("button", name="Upload Blog Post").click()
             await page.wait_for_timeout(5000)
-            logger.info("[Success] Blog Uploaded!")
+            print("[Success] Blog Uploaded Successfully!")
+            if status_callback: status_callback("Upload Complete!")
 
         except Exception as e:
-            logger.error(f"[Error] Upload Failed: {e}")
-            await page.screenshot(path="error_debug.png")
-            raise e
+            print(f"[Error] Upload failed: {e}")
         finally:
             await browser.close()
-            if data.get('image_path') and os.path.exists(data['image_path']):
+            if data['image_path'] and os.path.exists(data['image_path']):
                 os.remove(data['image_path'])
 
-# --- 6. EXECUTION ---
-def run_cli_mode():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--topic", type=str, default="", help="Topic.")
-    parser.add_argument("--instructions", type=str, default="", help="Instructions.")
-    args = parser.parse_args()
-
-    topic_in = args.topic.strip()
-    if not topic_in: logger.info("--- LAUNCHING TREND SPOTTER ---")
-    else: logger.info(f"--- TOPIC: {topic_in} ---")
-
-    try:
-        initial_state = {
-            "topic": topic_in, 
-            "custom_instructions": args.instructions, 
-            "draft_parts": [], # Initialize empty list for loop
-            "current_section_index": 0
-        }
-        
-        final_state = app_graph.invoke(initial_state)
-        
-        # Check if content was actually generated
-        if not final_state.get('final_content'):
-            logger.error("No content generated!")
-            sys.exit(1)
-            
-        disable_upload = os.getenv("DISABLE_UPLOAD", "").lower() in ("1", "true")
-        if final_state.get('image_path') and not disable_upload:
-            asyncio.run(upload_to_coder_design(final_state))
-        elif disable_upload:
-            logger.info("[Upload] Skipped.")
-            
-    except Exception as e:
-        logger.critical(f"CRITICAL FAILURE: {e}")
-        sys.exit(1)
-
-def run_streamlit_mode():
-    st.title("AI Auto-Blogger (Long-Form)")
-    if st.button("Generate"):
-        st.write("Running...")
-        # (Streamlit implementation omitted for brevity, uses same app_graph)
-
 if __name__ == "__main__":
-    if st and get_script_run_ctx(): run_streamlit_mode()
-    else: run_cli_mode()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--topic", type=str, default="", help="Topic")
+    args = parser.parse_args()
+    
+    initial = {"topic": args.topic, "iteration_count": 0}
+    final = app_graph.invoke(initial)
+    if final.get('image_path'):
+        asyncio.run(upload_to_coder_design(final))
