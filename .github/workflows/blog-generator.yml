@@ -1,43 +1,44 @@
-name: Generate and Upload Blog Post
+name: Manual Blog Generator
 
 on:
-  schedule:
-    - cron: '0 0,12 * * *' # Runs at midnight and noon UTC
-  workflow_dispatch: # Allows manual triggering
-  push:
-    branches:
-      - main
+  workflow_dispatch:
+    inputs:
+      topic:
+        description: 'Blog Topic (Leave empty for random trending topic)'
+        required: false
+        default: ''
 
 jobs:
   build-and-run:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+    - name: Checkout code
+      uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.x'
+    # --- THE FIX IS HERE: Explicitly use '3.11' ---
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11' 
+        cache: 'pip' # This speeds up future runs
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          python -m pip install playwright
-      - name: Install Playwright browsers
-        run: python -m playwright install chromium
-          
-      - name: Install Playwright browsers
-        run: |
-          playwright install chromium
-          sudo playwright install-deps chromium
+    - name: Install system dependencies (Safety Net)
+      # Just in case compilation is forced, this adds the missing jpeg library
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libjpeg-dev zlib1g-dev
 
-      - name: Create .env file
-        run: |
-          echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" > .env
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip setuptools wheel
+        pip install -r requirements.txt
+        playwright install chromium
 
-      - name: Run blog generator
-        env:
-          DISABLE_UPLOAD: ''
-        run: python main.py
+    - name: Run AI Agent
+      env:
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+        # If you added other env vars to secrets, map them here
+      run: |
+        python agent.py --topic "${{ github.event.inputs.topic }}"
