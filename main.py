@@ -59,7 +59,7 @@ class AgentState(TypedDict):
 # --- 2. TOOLS ---
 def suggest_authoritative_urls(topic: str, max_urls: int = 8) -> List[str]:
     print(f"[Tool] Finding verified URLs for: {topic}")
-    gpt4_turbo, gpt5.1 = get_llms()
+    gpt4_turbo, gpt4o = get_llms()
     prompt = f"""
     Provide {max_urls} EXTREMELY reliable, high-level URLs for this topic.
     Topic: {topic}
@@ -72,7 +72,7 @@ def suggest_authoritative_urls(topic: str, max_urls: int = 8) -> List[str]:
     
     Output ONLY raw URLs, one per line.
     """
-    resp = gpt5.1.invoke([HumanMessage(content=prompt)])
+    resp = gpt4o.invoke([HumanMessage(content=prompt)])
     urls = [u.strip() for u in resp.content.splitlines() if u.strip().startswith("http")]
     return urls[:max_urls]
 
@@ -141,7 +141,7 @@ def get_llms():
 
 def trend_spotter_node(state: AgentState):
     print("[Trend Spotter] Selecting category...")
-    _, gpt5.1 = get_llms()
+    _, gpt4o = get_llms()
 
     categories, weights = zip(*CATEGORIES_WEIGHTS)
     target_category = random.choices(categories, weights=weights, k=1)[0]
@@ -151,7 +151,7 @@ def trend_spotter_node(state: AgentState):
     Focus on: Emerging trends, controversy, or "How-To" guides for 2025.
     Output ONLY the topic title."""
 
-    response = gpt5.1.invoke([SystemMessage(content=system_prompt)])
+    response = gpt4o.invoke([SystemMessage(content=system_prompt)])
     new_topic = response.content.strip().replace('"', '')
     print(f"[Trend Spotter] Topic: {new_topic}")
 
@@ -186,7 +186,7 @@ def researcher_node(state: AgentState):
 
 def writer_node(state: AgentState):
     print("[Writer] Drafting content...")
-    _, gpt5.1 = get_llms()
+    _, gpt4o = get_llms()
 
     topic = state["topic"]
     feedback = state.get("critique_feedback", None)
@@ -231,7 +231,7 @@ def writer_node(state: AgentState):
     if feedback and feedback != "APPROVED":
         prompt += f"\n\nFEEDBACK FROM EDITOR: {feedback}"
 
-    response = gpt5.1.invoke([SystemMessage(content=system), HumanMessage(content=prompt)])
+    response = gpt4o.invoke([SystemMessage(content=system), HumanMessage(content=prompt)])
     content = response.content
 
     # --- SMART SANITIZER ---
@@ -294,7 +294,7 @@ def seo_analyst_node(state: AgentState):
 
 def meta_data_node(state: AgentState):
     print("[Meta Data] Generating Metadata...")
-    _, gpt5.1 = get_llms()
+    _, gpt4o = get_llms()
     draft = state["content_draft"]
 
     prompt = f"""
@@ -305,7 +305,7 @@ def meta_data_node(state: AgentState):
     
     Excerpt: {draft[:500]}
     """
-    response = gpt5.1.invoke([HumanMessage(content=prompt)])
+    response = gpt4o.invoke([HumanMessage(content=prompt)])
     
     try:
         clean = response.content.replace("```json", "").replace("```", "")
@@ -325,9 +325,9 @@ def meta_data_node(state: AgentState):
 
 def visual_node(state: AgentState):
     print("[Visuals] Generating Image...")
-    _, gpt5.1 = get_llms()
+    _, gpt4o = get_llms()
     prompt = f"Create a minimalist, high-tech image prompt for: {state['topic']}. No text."
-    resp = gpt5.1.invoke([HumanMessage(content=prompt)])
+    resp = gpt4o.invoke([HumanMessage(content=prompt)])
     path = generate_relevant_image(resp.content)
     return {"image_path": path}
 
